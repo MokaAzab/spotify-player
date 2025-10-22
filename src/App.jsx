@@ -123,11 +123,14 @@ const SpotifyNowPlaying = () => {
     return () => clearInterval(interval);
   }, [token]);
 
-  // Fetch playlists and Discover Weekly
+  // Fetch playlists and set Discover Weekly
   useEffect(() => {
     if (!token) return;
     
-    // Fetch ALL user playlists (up to 200)
+    // Set Discover Weekly directly (official Spotify playlist URI)
+    setDiscoverWeeklyUri('spotify:playlist:37i9dQZEVXcVGx4nxRq9oL');
+    
+    // Fetch user playlists for the dropdown menu
     const fetchAllPlaylists = async () => {
       let allPlaylists = [];
       let url = 'https://api.spotify.com/v1/me/playlists?limit=50';
@@ -138,23 +141,10 @@ const SpotifyNowPlaying = () => {
         });
         const data = await res.json();
         allPlaylists = [...allPlaylists, ...(data.items || [])];
-        url = data.next; // Get next page if exists
+        url = data.next;
       }
       
       setPlaylists(allPlaylists);
-      
-      // Find the OFFICIAL Discover Weekly
-      const dw = allPlaylists.find(p => 
-        p.name === 'Discover Weekly' && 
-        (p.owner.display_name === 'Spotify' || p.owner.id === 'spotify')
-      );
-      
-      if (dw) {
-        setDiscoverWeeklyUri(dw.uri);
-        console.log('Found Discover Weekly:', dw.uri);
-      } else {
-        console.log('Discover Weekly not found in', allPlaylists.length, 'playlists');
-      }
     };
     
     fetchAllPlaylists();
