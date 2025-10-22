@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Heart, Volume2, Music, Shuffle, Repeat, Repeat1, Share2 } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Heart, Plus, Volume2, Music, X, List, Share2, Shuffle, Repeat, Repeat1, Search } from 'lucide-react';
 
-const SpotifyCodaEmbed = () => {
+const SpotifyPlayer = () => {
   const [token, setToken] = useState(null);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -12,6 +12,12 @@ const SpotifyCodaEmbed = () => {
   const [duration, setDuration] = useState(0);
   const [shuffleState, setShuffleState] = useState(false);
   const [repeatState, setRepeatState] = useState('off');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [playlists, setPlaylists] = useState([]);
+  const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
+  const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
+  const [discoverWeeklyUri, setDiscoverWeeklyUri] = useState(null);
   const [isInIframe, setIsInIframe] = useState(false);
 
   const CLIENT_ID = '8e9e53c5e52f4af0bd5a946e85736742';
@@ -21,7 +27,10 @@ const SpotifyCodaEmbed = () => {
     'user-modify-playback-state',
     'user-read-currently-playing',
     'user-library-read',
-    'user-library-modify'
+    'user-library-modify',
+    'playlist-read-private',
+    'playlist-modify-public',
+    'playlist-modify-private'
   ].join(' ');
 
   // Check if in iframe
@@ -60,9 +69,8 @@ const SpotifyCodaEmbed = () => {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  // Authentication - support token from URL or localStorage
+  // Authentication - support token from URL
   useEffect(() => {
-    // Check for token in URL first (for iframe use)
     const urlParams = new URLSearchParams(window.location.search);
     const urlToken = urlParams.get('token');
     
@@ -151,7 +159,7 @@ const SpotifyCodaEmbed = () => {
           setIsLiked(liked);
         }
       } catch (error) {
-        // Silently handle errors
+        // Silently handle
       }
     };
 
@@ -159,6 +167,52 @@ const SpotifyCodaEmbed = () => {
     const interval = setInterval(fetchCurrent, 2000);
     return () => clearInterval(interval);
   }, [token]);
+
+  // Fetch playlists and Discover Weekly
+  useEffect(() => {
+    if (!token) return;
+    
+    setDiscoverWeeklyUri('spotify:playlist:37i9dQZEVXcVGx4nxRq9oL');
+    
+    const fetchAllPlaylists = async () => {
+      let allPlaylists = [];
+      let url = 'https://api.spotify.com/v1/me/playlists?limit=50';
+      
+      while (url && allPlaylists.length < 200) {
+        const res = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        allPlaylists = [...allPlaylists, ...(data.items || [])];
+        url = data.next;
+      }
+      
+      setPlaylists(allPlaylists);
+    };
+    
+    fetchAllPlaylists();
+  }, [token]);
+
+  // Search as you type
+  useEffect(() => {
+    if (searchQuery.length > 1) {
+      const timer = setTimeout(async () => {
+        try {
+          const response = await fetch(
+            `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=8`,
+            { headers: { 'Authorization': `Bearer ${token}` } }
+          );
+          const data = await response.json();
+          setSearchResults(data.tracks?.items || []);
+        } catch (error) {
+          console.error('Search error:', error);
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    } else {
+      setSearchResults([]);
+    }
+  }, [searchQuery, token]);
 
   const handleLogin = async () => {
     const codeVerifier = generateRandomString(64);
@@ -174,7 +228,6 @@ const SpotifyCodaEmbed = () => {
     authUrl.searchParams.append('code_challenge_method', 'S256');
     authUrl.searchParams.append('code_challenge', codeChallenge);
 
-    // If in iframe, open popup
     if (isInIframe) {
       const width = 500;
       const height = 700;
@@ -215,6 +268,18 @@ const SpotifyCodaEmbed = () => {
     control(`seek?position_ms=${newPos}`, 'PUT');
   };
 
+  const skipForward = () => {
+    const newPos = Math.min(progress + 15000, duration);
+    setProgress(newPos);
+    control(`seek?position_ms=${newPos}`, 'PUT');
+  };
+
+  const skipBackward = () => {
+    const newPos = Math.max(progress - 15000, 0);
+    setProgress(newPos);
+    control(`seek?position_ms=${newPos}`, 'PUT');
+  };
+
   const handleVolume = (e) => {
     const newVol = parseInt(e.target.value);
     setVolume(newVol);
@@ -245,6 +310,36 @@ const SpotifyCodaEmbed = () => {
     setRepeatState(newState);
   };
 
+  const addToPlaylist = async (playlistId) => {
+    if (!currentTrack) return;
+    await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uris: [currentTrack.uri] })
+    });
+    setShowAddToPlaylist(false);
+    alert('Added to playlist!');
+  };
+
+  const playTrack = async (uri) => {
+    await fetch('https://api.spotify.com/v1/me/player/play', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uris: [uri] })
+    });
+    setSearchQuery('');
+    setSearchResults([]);
+  };
+
+  const playPlaylist = async (uri) => {
+    await fetch('https://api.spotify.com/v1/me/player/play', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context_uri: uri })
+    });
+    setShowPlaylistMenu(false);
+  };
+
   const shareTrack = () => {
     if (!currentTrack) return;
     const url = currentTrack.external_urls?.spotify || `https://open.spotify.com/track/${currentTrack.id}`;
@@ -265,7 +360,7 @@ const SpotifyCodaEmbed = () => {
           <Music className="w-16 h-16 mx-auto mb-4 text-green-500" />
           <h1 className="text-2xl font-bold text-white mb-3">Spotify Player</h1>
           <p className="text-gray-400 mb-6 text-sm">
-            {isInIframe ? 'Click below to authenticate (popup window)' : 'Connect your Spotify account'}
+            {isInIframe ? 'Click to authenticate (popup)' : 'Connect your Spotify account'}
           </p>
           <button onClick={handleLogin} className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-full transition">
             Connect Spotify
@@ -288,31 +383,111 @@ const SpotifyCodaEmbed = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white p-4 flex items-center justify-center">
-      <div className="w-full max-w-md">
-        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 shadow-2xl">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white p-3 flex items-center justify-center">
+      <div className="w-full max-w-sm">
+        {/* Search + Browse */}
+        <div className="mb-3">
+          <div className="flex gap-2 mb-2">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search for a song..."
+              className="flex-1 bg-gray-800 text-white px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+            <button
+              onClick={() => setShowPlaylistMenu(!showPlaylistMenu)}
+              className="bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded-lg transition flex items-center gap-2"
+              title="Browse Playlists"
+            >
+              <List className="w-4 h-4" />
+            </button>
+            {discoverWeeklyUri && (
+              <button
+                onClick={() => playPlaylist(discoverWeeklyUri)}
+                className="bg-gray-800 hover:bg-gray-700 p-2 rounded-lg transition"
+                title="Play Discover Weekly"
+              >
+                <Play className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Search Results */}
+          {searchResults.length > 0 && (
+            <div className="bg-gray-800 rounded-lg p-2 mb-2 max-h-48 overflow-y-auto">
+              {searchResults.map((track) => (
+                <button
+                  key={track.id}
+                  onClick={() => playTrack(track.uri)}
+                  className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded transition text-sm"
+                >
+                  <img src={track.album.images[2]?.url} alt="" className="w-8 h-8 rounded" />
+                  <div className="flex-1 text-left min-w-0">
+                    <p className="text-xs font-medium truncate">{track.name}</p>
+                    <p className="text-xs text-gray-400 truncate">
+                      {track.artists.map(a => a.name).join(', ')}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Playlist Menu */}
+          {showPlaylistMenu && (
+            <div className="bg-gray-800 rounded-lg p-2 mb-2 max-h-48 overflow-y-auto">
+              <div className="flex justify-between items-center mb-2 px-1">
+                <p className="text-xs text-gray-400 font-semibold">PLAYLISTS</p>
+                <button onClick={() => setShowPlaylistMenu(false)} className="text-gray-400">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+              {playlists.map((playlist) => (
+                <button
+                  key={playlist.id}
+                  onClick={() => playPlaylist(playlist.uri)}
+                  className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-sm transition"
+                >
+                  <div className="w-8 h-8 bg-gray-700 rounded flex items-center justify-center text-xs">
+                    {playlist.images?.[0]?.url ? (
+                      <img src={playlist.images[0].url} alt="" className="w-8 h-8 rounded" />
+                    ) : '♪'}
+                  </div>
+                  <div className="flex-1 text-left min-w-0">
+                    <p className="text-xs truncate">{playlist.name}</p>
+                    <p className="text-xs text-gray-400">{playlist.tracks.total} tracks</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Now Playing Card */}
+        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl p-4 shadow-2xl">
           {/* Album Art */}
-          <div className="relative mb-4">
+          <div className="relative mb-3">
             <img src={currentTrack.album.images[0]?.url} alt="" className="w-full aspect-square rounded-lg" />
             {device && (
-              <div className="absolute top-2 right-2 bg-black bg-opacity-70 px-3 py-1 rounded-full text-xs flex items-center gap-1">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                {device.name}
+              <div className="absolute top-2 right-2 bg-black bg-opacity-70 px-2 py-1 rounded-full text-xs flex items-center gap-1">
+                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-xs">{device.name}</span>
               </div>
             )}
           </div>
 
           {/* Track Info */}
-          <div className="mb-4">
-            <h2 className="text-xl font-bold mb-1 truncate">{currentTrack.name}</h2>
-            <p className="text-gray-400 text-sm truncate">
+          <div className="mb-3">
+            <h2 className="text-lg font-bold truncate leading-tight">{currentTrack.name}</h2>
+            <p className="text-gray-400 text-xs truncate">
               {currentTrack.artists.map(a => a.name).join(', ')}
             </p>
           </div>
 
           {/* Progress */}
-          <div className="mb-4">
-            <div onClick={handleSeek} className="bg-gray-700 h-1 rounded-full cursor-pointer hover:h-1.5 transition-all">
+          <div className="mb-3">
+            <div onClick={handleSeek} className="bg-gray-700 h-1 rounded-full cursor-pointer">
               <div className="bg-green-500 h-full" style={{ width: `${(progress / duration) * 100}%` }} />
             </div>
             <div className="flex justify-between text-xs text-gray-400 mt-1">
@@ -321,48 +496,74 @@ const SpotifyCodaEmbed = () => {
             </div>
           </div>
 
+          {/* Skip buttons */}
+          <div className="flex justify-center gap-2 mb-3">
+            <button onClick={skipBackward} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded-full">-15s</button>
+            <button onClick={skipForward} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded-full">+15s</button>
+          </div>
+
           {/* Main Controls */}
-          <div className="flex items-center justify-center gap-4 mb-4">
+          <div className="flex items-center justify-center gap-3 mb-3">
             <button
               onClick={toggleShuffle}
-              className={`p-2 rounded-full transition ${shuffleState ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
+              className={`p-1.5 rounded-full transition ${shuffleState ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
             >
-              <Shuffle className="w-5 h-5" />
+              <Shuffle className="w-4 h-4" />
             </button>
             
-            <button onClick={skipPrevious} className="text-gray-400 hover:text-white p-2">
-              <SkipBack className="w-6 h-6" />
+            <button onClick={skipPrevious} className="text-gray-400 hover:text-white p-1">
+              <SkipBack className="w-5 h-5" />
             </button>
             
-            <button onClick={togglePlay} className="bg-white text-black rounded-full p-3 hover:scale-105 transition">
-              {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
+            <button onClick={togglePlay} className="bg-white text-black rounded-full p-2.5 hover:scale-105 transition">
+              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
             </button>
             
-            <button onClick={skipNext} className="text-gray-400 hover:text-white p-2">
-              <SkipForward className="w-6 h-6" />
+            <button onClick={skipNext} className="text-gray-400 hover:text-white p-1">
+              <SkipForward className="w-5 h-5" />
             </button>
             
             <button
               onClick={toggleRepeat}
-              className={`p-2 rounded-full transition ${repeatState !== 'off' ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
+              className={`p-1.5 rounded-full transition ${repeatState !== 'off' ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
             >
-              {repeatState === 'track' ? <Repeat1 className="w-5 h-5" /> : <Repeat className="w-5 h-5" />}
+              {repeatState === 'track' ? <Repeat1 className="w-4 h-4" /> : <Repeat className="w-4 h-4" />}
             </button>
           </div>
 
           {/* Actions */}
-          <div className="flex justify-center gap-3 mb-4">
-            <button onClick={toggleLike} className={`p-2 rounded-full ${isLiked ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}>
-              <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
+          <div className="flex justify-center gap-2 mb-3">
+            <button onClick={toggleLike} className={`p-1.5 rounded-full ${isLiked ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}>
+              <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
             </button>
-            <button onClick={shareTrack} className="p-2 rounded-full text-gray-400 hover:text-white">
-              <Share2 className="w-5 h-5" />
+            <button onClick={() => setShowAddToPlaylist(!showAddToPlaylist)} className="p-1.5 rounded-full text-gray-400 hover:text-white">
+              <Plus className="w-4 h-4" />
+            </button>
+            <button onClick={shareTrack} className="p-1.5 rounded-full text-gray-400 hover:text-white">
+              <Share2 className="w-4 h-4" />
             </button>
           </div>
 
+          {/* Add to Playlist */}
+          {showAddToPlaylist && (
+            <div className="bg-gray-800 rounded-lg p-2 mb-3 max-h-36 overflow-y-auto">
+              <div className="flex justify-between mb-2">
+                <p className="text-xs text-gray-400">Add to playlist:</p>
+                <button onClick={() => setShowAddToPlaylist(false)}>
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+              {playlists.map((p) => (
+                <button key={p.id} onClick={() => addToPlaylist(p.id)} className="w-full text-left px-2 py-1.5 hover:bg-gray-700 rounded text-xs">
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Volume */}
-          <div className="flex items-center gap-3">
-            <Volume2 className="w-4 h-4 text-gray-400" />
+          <div className="flex items-center gap-2">
+            <Volume2 className="w-3.5 h-3.5 text-gray-400" />
             <input
               type="range"
               min="0"
@@ -372,7 +573,7 @@ const SpotifyCodaEmbed = () => {
               className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
               style={{ background: `linear-gradient(to right, #22c55e 0%, #22c55e ${volume}%, #374151 ${volume}%, #374151 100%)` }}
             />
-            <span className="text-xs text-gray-400 w-8 text-right">{volume}%</span>
+            <span className="text-xs text-gray-400 w-7 text-right">{volume}%</span>
           </div>
         </div>
       </div>
@@ -380,4 +581,4 @@ const SpotifyCodaEmbed = () => {
   );
 };
 
-export default SpotifyCodaEmbed;
+export default SpotifyPlayer;
