@@ -132,20 +132,22 @@ const SpotifyNowPlaying = () => {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(res => res.json())
-      .then(data => setPlaylists(data.items || []));
-    
-    // Check if Discover Weekly exists (Spotify's auto-generated playlist)
-    fetch('https://api.spotify.com/v1/playlists/37i9dQZEVXcVGx4nxRq9oL', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(res => res.json())
       .then(data => {
-        if (data.id) {
-          setDiscoverWeeklyUri(data.uri);
-          console.log('Discover Weekly found:', data.name);
+        const items = data.items || [];
+        setPlaylists(items);
+        
+        // Find Discover Weekly - it's created by Spotify
+        const dw = items.find(p => 
+          p.name === 'Discover Weekly' && p.owner.id === 'spotify'
+        );
+        
+        if (dw) {
+          setDiscoverWeeklyUri(dw.uri);
+          console.log('Discover Weekly found:', dw.uri);
+        } else {
+          console.log('Discover Weekly not found. Available playlists:', items.map(p => p.name));
         }
-      })
-      .catch(() => console.log('Discover Weekly not available'));
+      });
   }, [token]);
 
   // Search as you type
