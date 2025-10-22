@@ -537,10 +537,7 @@ const SpotifyNowPlaying = () => {
             </button>
             
             <button
-              onClick={() => {
-                setShowSearch(false);
-                setShowPlaylists(prev => !prev);
-              }}
+              onClick={() => setShowPlaylists(prev => !prev)}
               className="p-2 rounded-full text-gray-400 hover:text-white transition"
               title="Add to Playlist"
             >
@@ -549,7 +546,7 @@ const SpotifyNowPlaying = () => {
           </div>
 
           {/* Add to Playlist Selection */}
-          {showPlaylists && !showSearch && (
+          {showPlaylists && (
             <div className="bg-gray-800 rounded-lg p-3 max-h-48 overflow-y-auto mb-4">
               <div className="flex justify-between items-center mb-2">
                 <p className="text-xs text-gray-400">Add to playlist:</p>
