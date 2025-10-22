@@ -25,92 +25,104 @@ const SpotifyPlayer = () => {
     'user-modify-playback-state'
   ].join(' ');
 
-// Get auth token from URL or localStorage
-useEffect(() => {
-  const hash = window.location.hash;
-  let storedToken = window.localStorage.getItem('spotify_token');
+  // PKCE helper functions
+  const generateRandomString = (length) => {
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const values = crypto.getRandomValues(new Uint8Array(length));
+    return values.reduce((acc, x) => acc + possible[x % possible.length], "");
+  };
 
-  console.log('Current hash:', hash);
-  console.log('Stored token:', storedToken);
+  const sha256 = async (plain) => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(plain);
+    return window.crypto.subtle.digest('SHA-256', data);
+  };
 
-  if (!storedToken && hash) {
-    const params = new URLSearchParams(hash.substring(1));
-    storedToken = params.get('access_token');
-    console.log('Token from URL:', storedToken);
-    
-    if (storedToken) {
-      window.localStorage.setItem('spotify_token', storedToken);
-      // Clear the hash from URL
-      window.location.hash = '';
-      console.log('Token saved to localStorage');
+  const base64encode = (input) => {
+    return btoa(String.fromCharCode(...new Uint8Array(input)))
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+  };
+
+  // Get auth token from URL or localStorage
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    let storedToken = localStorage.getItem('spotify_token');
+
+    if (code && !storedToken) {
+      // Exchange code for token
+      const codeVerifier = localStorage.getItem('code_verifier');
+      
+      fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          client_id: CLIENT_ID,
+          grant_type: 'authorization_code',
+          code: code,
+          redirect_uri: REDIRECT_URI,
+          code_verifier: codeVerifier,
+        }),
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.access_token) {
+            localStorage.setItem('spotify_token', data.access_token);
+            localStorage.removeItem('code_verifier');
+            setToken(data.access_token);
+            window.history.replaceState({}, document.title, '/');
+          }
+        })
+        .catch(error => console.error('Token exchange error:', error));
+    } else if (storedToken) {
+      setToken(storedToken);
     }
-  }
-
-  if (storedToken) {
-    console.log('Setting token in state');
-    setToken(storedToken);
-  } else {
-    console.log('No token found');
-  }
-}, []);
+  }, []);
 
   // Initialize Spotify Web Playback SDK
-useEffect(() => {
-  if (!token) return;
+  useEffect(() => {
+    if (!token) return;
 
-  const script = document.createElement('script');
-  script.src = 'https://sdk.scdn.co/spotify-player.js';
-  script.async = true;
-  document.body.appendChild(script);
+    const script = document.createElement('script');
+    script.src = 'https://sdk.scdn.co/spotify-player.js';
+    script.async = true;
+    document.body.appendChild(script);
 
-  window.onSpotifyWebPlaybackSDKReady = () => {
-    const spotifyPlayer = new window.Spotify.Player({
-      name: 'Coda Spotify Player',
-      getOAuthToken: cb => { cb(token); },
-      volume: volume / 100
-    });
+    window.onSpotifyWebPlaybackSDKReady = () => {
+      const spotifyPlayer = new window.Spotify.Player({
+        name: 'Coda Spotify Player',
+        getOAuthToken: cb => { cb(token); },
+        volume: volume / 100
+      });
 
-    spotifyPlayer.addListener('ready', ({ device_id }) => {
-      console.log('Ready with Device ID', device_id);
-      setDeviceId(device_id);
-    });
+      spotifyPlayer.addListener('ready', ({ device_id }) => {
+        console.log('Ready with Device ID', device_id);
+        setDeviceId(device_id);
+      });
 
-    spotifyPlayer.addListener('not_ready', ({ device_id }) => {
-      console.log('Device ID has gone offline', device_id);
-    });
+      spotifyPlayer.addListener('player_state_changed', state => {
+        if (!state) return;
+        
+        setCurrentTrack(state.track_window.current_track);
+        setIsPlaying(!state.paused);
+        setPosition(state.position);
+        setDuration(state.duration);
+      });
 
-    spotifyPlayer.addListener('initialization_error', ({ message }) => {
-      console.error('Initialization Error:', message);
-    });
+      spotifyPlayer.connect();
+      setPlayer(spotifyPlayer);
+    };
 
-    spotifyPlayer.addListener('authentication_error', ({ message }) => {
-      console.error('Authentication Error:', message);
-    });
-
-    spotifyPlayer.addListener('account_error', ({ message }) => {
-      console.error('Account Error:', message);
-      alert('This app requires Spotify Premium. Please upgrade your account.');
-    });
-
-    spotifyPlayer.addListener('player_state_changed', state => {
-      if (!state) return;
-      
-      setCurrentTrack(state.track_window.current_track);
-      setIsPlaying(!state.paused);
-      setPosition(state.position);
-      setDuration(state.duration);
-    });
-
-    spotifyPlayer.connect();
-    setPlayer(spotifyPlayer);
-  };
-
-  return () => {
-    if (player) {
-      player.disconnect();
-    }
-  };
-}, [token]);
+    return () => {
+      if (player) {
+        player.disconnect();
+      }
+    };
+  }, [token]);
 
   // Position tracking
   useEffect(() => {
