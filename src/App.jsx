@@ -94,8 +94,17 @@ const SpotifyNowPlaying = () => {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
-        if (response.status === 204) {
+        if (response.status === 204 || response.status === 202) {
+          // No content or accepted - no active playback
           setCurrentTrack(null);
+          return;
+        }
+
+        if (!response.ok) {
+          // Skip error logging for expected errors
+          if (response.status !== 429 && response.status !== 401) {
+            console.warn('Playback fetch status:', response.status);
+          }
           return;
         }
 
@@ -118,7 +127,7 @@ const SpotifyNowPlaying = () => {
           setIsLiked(liked);
         }
       } catch (error) {
-        console.error('Playback error:', error);
+        // Silently handle network errors - they're usually temporary
       }
     };
 
