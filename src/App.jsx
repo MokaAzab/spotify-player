@@ -60,8 +60,21 @@ const SpotifyCodaEmbed = () => {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  // Authentication
+  // Authentication - support token from URL or localStorage
   useEffect(() => {
+    // Check for token in URL first (for iframe use)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get('token');
+    
+    if (urlToken) {
+      setToken(urlToken);
+      // Store in localStorage for future use
+      localStorage.setItem('spotify_token', urlToken);
+      // Clean URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+      return;
+    }
+
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     let storedToken = localStorage.getItem('spotify_token');
@@ -87,15 +100,24 @@ const SpotifyCodaEmbed = () => {
             localStorage.removeItem('code_verifier');
             setToken(data.access_token);
             
-            // If opened as popup, send token to parent
+            // Display token for user to copy
+            const tokenDisplay = document.createElement('div');
+            tokenDisplay.style.cssText = 'position:fixed;top:10px;left:10px;right:10px;background:#1DB954;color:white;padding:15px;border-radius:10px;z-index:9999;font-size:12px;';
+            tokenDisplay.innerHTML = `
+              <strong>✅ Authenticated!</strong><br/>
+              <p style="margin:10px 0;font-size:11px;">To use in Coda embed, add this to the URL:</p>
+              <input readonly value="?token=${data.access_token}" 
+                style="width:100%;padding:5px;background:white;color:black;border:none;border-radius:5px;font-size:10px;"
+                onclick="this.select();document.execCommand('copy');alert('Copied! Add this to your Coda embed URL')"/>
+              <p style="margin-top:10px;font-size:10px;">Click the text above to copy, then close this window.</p>
+            `;
+            document.body.appendChild(tokenDisplay);
+            
             if (window.opener) {
               window.opener.postMessage({
                 type: 'spotify_auth',
                 token: data.access_token
               }, '*');
-              window.close();
-            } else {
-              window.history.replaceState({}, document.title, '/');
             }
           }
         });
