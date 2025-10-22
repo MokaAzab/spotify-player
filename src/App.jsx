@@ -132,9 +132,18 @@ const SpotifyNowPlaying = () => {
       .then(res => res.json())
       .then(data => {
         setPlaylists(data.items || []);
-        // Find Discover Weekly
-        const dw = data.items?.find(p => p.name === 'Discover Weekly');
-        if (dw) setDiscoverWeeklyUri(dw.uri);
+        // Find Discover Weekly (try different possible names)
+        const dw = data.items?.find(p => 
+          p.name.toLowerCase().includes('discover weekly') ||
+          p.name.toLowerCase().includes('discover') ||
+          p.owner?.id === 'spotify' && p.name.toLowerCase().includes('discover')
+        );
+        if (dw) {
+          console.log('Found Discover Weekly:', dw.name);
+          setDiscoverWeeklyUri(dw.uri);
+        } else {
+          console.log('Discover Weekly not found in playlists');
+        }
       });
   }, [token]);
 
