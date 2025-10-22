@@ -127,27 +127,37 @@ const SpotifyNowPlaying = () => {
   useEffect(() => {
     if (!token) return;
     
-    // Fetch user playlists
-    fetch('https://api.spotify.com/v1/me/playlists?limit=50', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        const items = data.items || [];
-        setPlaylists(items);
-        
-        // Find the OFFICIAL Discover Weekly (owned by Spotify, exact name match)
-        const dw = items.find(p => 
-          p.name === 'Discover Weekly' && p.owner.display_name === 'Spotify'
-        );
-        
-        if (dw) {
-          setDiscoverWeeklyUri(dw.uri);
-          console.log('Found Discover Weekly:', dw.name, 'by', dw.owner.display_name);
-        } else {
-          console.log('Discover Weekly not found. Try refreshing after adding it to your library.');
-        }
-      });
+    // Fetch ALL user playlists (up to 200)
+    const fetchAllPlaylists = async () => {
+      let allPlaylists = [];
+      let url = 'https://api.spotify.com/v1/me/playlists?limit=50';
+      
+      while (url && allPlaylists.length < 200) {
+        const res = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        allPlaylists = [...allPlaylists, ...(data.items || [])];
+        url = data.next; // Get next page if exists
+      }
+      
+      setPlaylists(allPlaylists);
+      
+      // Find the OFFICIAL Discover Weekly
+      const dw = allPlaylists.find(p => 
+        p.name === 'Discover Weekly' && 
+        (p.owner.display_name === 'Spotify' || p.owner.id === 'spotify')
+      );
+      
+      if (dw) {
+        setDiscoverWeeklyUri(dw.uri);
+        console.log('Found Discover Weekly:', dw.uri);
+      } else {
+        console.log('Discover Weekly not found in', allPlaylists.length, 'playlists');
+      }
+    };
+    
+    fetchAllPlaylists();
   }, [token]);
 
   // Search as you type
