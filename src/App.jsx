@@ -45,45 +45,62 @@ const SpotifyPlayer = () => {
   }, []);
 
   // Initialize Spotify Web Playback SDK
-  useEffect(() => {
-    if (!token) return;
+useEffect(() => {
+  if (!token) return;
 
-    const script = document.createElement('script');
-    script.src = 'https://sdk.scdn.co/spotify-player.js';
-    script.async = true;
-    document.body.appendChild(script);
+  const script = document.createElement('script');
+  script.src = 'https://sdk.scdn.co/spotify-player.js';
+  script.async = true;
+  document.body.appendChild(script);
 
-    window.onSpotifyWebPlaybackSDKReady = () => {
-      const spotifyPlayer = new window.Spotify.Player({
-        name: 'Coda Spotify Player',
-        getOAuthToken: cb => { cb(token); },
-        volume: volume / 100
-      });
+  window.onSpotifyWebPlaybackSDKReady = () => {
+    const spotifyPlayer = new window.Spotify.Player({
+      name: 'Coda Spotify Player',
+      getOAuthToken: cb => { cb(token); },
+      volume: volume / 100
+    });
 
-      spotifyPlayer.addListener('ready', ({ device_id }) => {
-        console.log('Ready with Device ID', device_id);
-        setDeviceId(device_id);
-      });
+    spotifyPlayer.addListener('ready', ({ device_id }) => {
+      console.log('Ready with Device ID', device_id);
+      setDeviceId(device_id);
+    });
 
-      spotifyPlayer.addListener('player_state_changed', state => {
-        if (!state) return;
-        
-        setCurrentTrack(state.track_window.current_track);
-        setIsPlaying(!state.paused);
-        setPosition(state.position);
-        setDuration(state.duration);
-      });
+    spotifyPlayer.addListener('not_ready', ({ device_id }) => {
+      console.log('Device ID has gone offline', device_id);
+    });
 
-      spotifyPlayer.connect();
-      setPlayer(spotifyPlayer);
-    };
+    spotifyPlayer.addListener('initialization_error', ({ message }) => {
+      console.error('Initialization Error:', message);
+    });
 
-    return () => {
-      if (player) {
-        player.disconnect();
-      }
-    };
-  }, [token]);
+    spotifyPlayer.addListener('authentication_error', ({ message }) => {
+      console.error('Authentication Error:', message);
+    });
+
+    spotifyPlayer.addListener('account_error', ({ message }) => {
+      console.error('Account Error:', message);
+      alert('This app requires Spotify Premium. Please upgrade your account.');
+    });
+
+    spotifyPlayer.addListener('player_state_changed', state => {
+      if (!state) return;
+      
+      setCurrentTrack(state.track_window.current_track);
+      setIsPlaying(!state.paused);
+      setPosition(state.position);
+      setDuration(state.duration);
+    });
+
+    spotifyPlayer.connect();
+    setPlayer(spotifyPlayer);
+  };
+
+  return () => {
+    if (player) {
+      player.disconnect();
+    }
+  };
+}, [token]);
 
   // Position tracking
   useEffect(() => {
