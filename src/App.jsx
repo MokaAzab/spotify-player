@@ -123,28 +123,29 @@ const SpotifyNowPlaying = () => {
     return () => clearInterval(interval);
   }, [token]);
 
-  // Fetch playlists
+  // Fetch playlists and Discover Weekly
   useEffect(() => {
     if (!token) return;
+    
+    // Fetch user playlists
     fetch('https://api.spotify.com/v1/me/playlists?limit=50', {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(res => res.json())
+      .then(data => setPlaylists(data.items || []));
+    
+    // Check if Discover Weekly exists (Spotify's auto-generated playlist)
+    fetch('https://api.spotify.com/v1/playlists/37i9dQZEVXcVGx4nxRq9oL', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.json())
       .then(data => {
-        setPlaylists(data.items || []);
-        // Find Discover Weekly (try different possible names)
-        const dw = data.items?.find(p => 
-          p.name.toLowerCase().includes('discover weekly') ||
-          p.name.toLowerCase().includes('discover') ||
-          p.owner?.id === 'spotify' && p.name.toLowerCase().includes('discover')
-        );
-        if (dw) {
-          console.log('Found Discover Weekly:', dw.name);
-          setDiscoverWeeklyUri(dw.uri);
-        } else {
-          console.log('Discover Weekly not found in playlists');
+        if (data.id) {
+          setDiscoverWeeklyUri(data.uri);
+          console.log('Discover Weekly found:', data.name);
         }
-      });
+      })
+      .catch(() => console.log('Discover Weekly not available'));
   }, [token]);
 
   // Search as you type
@@ -329,10 +330,10 @@ const SpotifyNowPlaying = () => {
             {discoverWeeklyUri && (
               <button
                 onClick={() => playPlaylist(discoverWeeklyUri)}
-                className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg transition text-sm whitespace-nowrap"
+                className="bg-green-600 hover:bg-green-700 p-2 rounded-lg transition"
                 title="Play Discover Weekly"
               >
-                🎧 DW
+                <Play className="w-5 h-5" />
               </button>
             )}
           </div>
