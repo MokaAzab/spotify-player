@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Heart, Plus, Volume2, Music } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Heart, Plus, Volume2, Music, Search, List, X } from 'lucide-react';
 
 const SpotifyNowPlaying = () => {
   const [token, setToken] = useState(null);
@@ -12,6 +12,10 @@ const SpotifyNowPlaying = () => {
   const [showPlaylists, setShowPlaylists] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearch, setShowSearch] = useState(false);
+  const [userPlaylists, setUserPlaylists] = useState([]);
 
   const CLIENT_ID = '8e9e53c5e52f4af0bd5a946e85736742';
   const REDIRECT_URI = window.location.origin + '/callback';
@@ -129,11 +133,14 @@ const SpotifyNowPlaying = () => {
   useEffect(() => {
     if (!token) return;
 
-    fetch('https://api.spotify.com/v1/me/playlists?limit=20', {
+    fetch('https://api.spotify.com/v1/me/playlists?limit=50', {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(res => res.json())
-      .then(data => setPlaylists(data.items || []))
+      .then(data => {
+        setPlaylists(data.items || []);
+        setUserPlaylists(data.items || []);
+      })
       .catch(error => console.error('Error fetching playlists:', error));
   }, [token]);
 
@@ -231,6 +238,62 @@ const SpotifyNowPlaying = () => {
     spotifyControl(`seek?position_ms=${newPosition}`, 'PUT');
   };
 
+  const searchSpotify = async () => {
+    if (!searchQuery.trim()) return;
+
+    try {
+      const response = await fetch(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track,playlist&limit=10`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }
+      );
+      const data = await response.json();
+      setSearchResults({
+        tracks: data.tracks?.items || [],
+        playlists: data.playlists?.items || []
+      });
+    } catch (error) {
+      console.error('Search error:', error);
+    }
+  };
+
+  const playTrack = async (uri) => {
+    try {
+      await fetch('https://api.spotify.com/v1/me/player/play', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ uris: [uri] })
+      });
+      setShowSearch(false);
+      setSearchQuery('');
+      setSearchResults([]);
+    } catch (error) {
+      console.error('Play error:', error);
+    }
+  };
+
+  const playPlaylist = async (contextUri) => {
+    try {
+      await fetch('https://api.spotify.com/v1/me/player/play', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ context_uri: contextUri })
+      });
+      setShowSearch(false);
+      setSearchQuery('');
+      setSearchResults([]);
+    } catch (error) {
+      console.error('Play error:', error);
+    }
+  };
+
   const formatTime = (ms) => {
     const seconds = Math.floor(ms / 1000);
     const mins = Math.floor(seconds / 60);
@@ -271,6 +334,116 @@ const SpotifyNowPlaying = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white p-4 flex items-center justify-center">
       <div className="w-full max-w-md">
+        {/* Search/Browse Toggle */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setShowSearch(!showSearch)}
+            className={`flex-1 py-2 px-4 rounded-lg transition flex items-center justify-center gap-2 ${
+              showSearch ? 'bg-green-600' : 'bg-gray-800 hover:bg-gray-700'
+            }`}
+          >
+            <Search className="w-4 h-4" />
+            Search
+          </button>
+          <button
+            onClick={() => {
+              setShowSearch(false);
+              setShowPlaylists(!showPlaylists);
+            }}
+            className={`flex-1 py-2 px-4 rounded-lg transition flex items-center justify-center gap-2 ${
+              showPlaylists ? 'bg-green-600' : 'bg-gray-800 hover:bg-gray-700'
+            }`}
+          >
+            <List className="w-4 h-4" />
+            Playlists
+          </button>
+        </div>
+
+        {/* Search Panel */}
+        {showSearch && (
+          <div className="bg-gray-800 rounded-2xl p-4 mb-4 max-h-96 overflow-y-auto">
+            <div className="flex gap-2 mb-3">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && searchSpotify()}
+                placeholder="Search songs or playlists..."
+                className="flex-1 bg-gray-700 text-white px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <button
+                onClick={searchSpotify}
+                className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg transition"
+              >
+                <Search className="w-4 h-4" />
+              </button>
+            </div>
+
+            {searchResults.tracks?.length > 0 && (
+              <div className="mb-3">
+                <p className="text-xs text-gray-400 mb-2 font-semibold">TRACKS</p>
+                {searchResults.tracks.map((track) => (
+                  <button
+                    key={track.id}
+                    onClick={() => playTrack(track.uri)}
+                    className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-left transition"
+                  >
+                    <img src={track.album.images[2]?.url} alt="" className="w-10 h-10 rounded" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{track.name}</p>
+                      <p className="text-xs text-gray-400 truncate">
+                        {track.artists.map(a => a.name).join(', ')}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {searchResults.playlists?.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-400 mb-2 font-semibold">PLAYLISTS</p>
+                {searchResults.playlists.map((playlist) => (
+                  <button
+                    key={playlist.id}
+                    onClick={() => playPlaylist(playlist.uri)}
+                    className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-left transition"
+                  >
+                    <img src={playlist.images[0]?.url} alt="" className="w-10 h-10 rounded" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{playlist.name}</p>
+                      <p className="text-xs text-gray-400">{playlist.tracks.total} tracks</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Your Playlists Panel */}
+        {showPlaylists && !showSearch && (
+          <div className="bg-gray-800 rounded-2xl p-4 mb-4 max-h-96 overflow-y-auto">
+            <p className="text-xs text-gray-400 mb-3 font-semibold">YOUR PLAYLISTS</p>
+            {userPlaylists.map((playlist) => (
+              <button
+                key={playlist.id}
+                onClick={() => playPlaylist(playlist.uri)}
+                className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-left transition mb-1"
+              >
+                <img 
+                  src={playlist.images[0]?.url || 'https://via.placeholder.com/40'} 
+                  alt="" 
+                  className="w-10 h-10 rounded"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{playlist.name}</p>
+                  <p className="text-xs text-gray-400">{playlist.tracks.total} tracks</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
         {/* Now Playing Card */}
         <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 shadow-2xl">
           {/* Album Art */}
@@ -367,7 +540,10 @@ const SpotifyNowPlaying = () => {
             </button>
             
             <button
-              onClick={() => setShowPlaylists(!showPlaylists)}
+              onClick={() => {
+                setShowSearch(false);
+                setShowPlaylists(prev => !prev);
+              }}
               className="p-2 rounded-full text-gray-400 hover:text-white transition"
               title="Add to Playlist"
             >
@@ -375,10 +551,18 @@ const SpotifyNowPlaying = () => {
             </button>
           </div>
 
-          {/* Playlist Selection */}
-          {showPlaylists && (
+          {/* Add to Playlist Selection */}
+          {showPlaylists && !showSearch && (
             <div className="bg-gray-800 rounded-lg p-3 max-h-48 overflow-y-auto mb-4">
-              <p className="text-xs text-gray-400 mb-2">Add to playlist:</p>
+              <div className="flex justify-between items-center mb-2">
+                <p className="text-xs text-gray-400">Add to playlist:</p>
+                <button
+                  onClick={() => setShowPlaylists(false)}
+                  className="text-gray-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
               {playlists.map(playlist => (
                 <button
                   key={playlist.id}
