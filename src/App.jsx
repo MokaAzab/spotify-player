@@ -12,7 +12,14 @@ const SpotifyPlayer = () => {
   const [volume, setVolume] = useState(50);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  const [userProfile, setUserProfile] = useState(null);
+  const [isInIframe, setIsInIframe] = useState(false);
   const intervalRef = useRef(null);
+
+  // Check if running in iframe
+  useEffect(() => {
+    setIsInIframe(window.self !== window.top);
+  }, []);
 
   // Configuration - Replace with your Spotify credentials
   const CLIENT_ID = '8e9e53c5e52f4af0bd5a946e85736742';
@@ -47,6 +54,16 @@ const SpotifyPlayer = () => {
 
   // Get auth token from URL or localStorage
   useEffect(() => {
+    // Listen for messages from popup window (for iframe auth)
+    const handleMessage = (event) => {
+      if (event.data.type === 'spotify_auth' && event.data.token) {
+        localStorage.setItem('spotify_token', event.data.token);
+        setToken(event.data.token);
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     let storedToken = localStorage.getItem('spotify_token');
@@ -74,18 +91,42 @@ const SpotifyPlayer = () => {
             localStorage.setItem('spotify_token', data.access_token);
             localStorage.removeItem('code_verifier');
             setToken(data.access_token);
-            window.history.replaceState({}, document.title, '/');
+            
+            // If opened as popup, send token to parent
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'spotify_auth',
+                token: data.access_token
+              }, '*');
+              window.close();
+            } else {
+              window.history.replaceState({}, document.title, '/');
+            }
           }
         })
         .catch(error => console.error('Token exchange error:', error));
     } else if (storedToken) {
       setToken(storedToken);
     }
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
   }, []);
 
   // Initialize Spotify Web Playback SDK
   useEffect(() => {
     if (!token) return;
+
+    // Fetch user profile
+    fetch('https://api.spotify.com/v1/me', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+      .then(response => response.json())
+      .then(data => setUserProfile(data))
+      .catch(error => console.error('Profile fetch error:', error));
 
     const script = document.createElement('script');
     script.src = 'https://sdk.scdn.co/spotify-player.js';
@@ -142,23 +183,37 @@ const SpotifyPlayer = () => {
     };
   }, [isPlaying, duration]);
 
-const handleLogin = async () => {
-  const codeVerifier = generateRandomString(64);
-  const hashed = await sha256(codeVerifier);
-  const codeChallenge = base64encode(hashed);
+  const handleLogin = async () => {
+    const codeVerifier = generateRandomString(64);
+    const hashed = await sha256(codeVerifier);
+    const codeChallenge = base64encode(hashed);
 
-  localStorage.setItem('code_verifier', codeVerifier);
+    localStorage.setItem('code_verifier', codeVerifier);
 
-  const authUrl = new URL('https://accounts.spotify.com/authorize');
-  authUrl.searchParams.append('client_id', CLIENT_ID);
-  authUrl.searchParams.append('response_type', 'code');
-  authUrl.searchParams.append('redirect_uri', REDIRECT_URI);
-  authUrl.searchParams.append('scope', SCOPES);
-  authUrl.searchParams.append('code_challenge_method', 'S256');
-  authUrl.searchParams.append('code_challenge', codeChallenge);
+    const authUrl = new URL('https://accounts.spotify.com/authorize');
+    authUrl.searchParams.append('client_id', CLIENT_ID);
+    authUrl.searchParams.append('response_type', 'code');
+    authUrl.searchParams.append('redirect_uri', REDIRECT_URI);
+    authUrl.searchParams.append('scope', SCOPES);
+    authUrl.searchParams.append('code_challenge_method', 'S256');
+    authUrl.searchParams.append('code_challenge', codeChallenge);
 
-  window.location.href = authUrl.toString();
-};
+    // If in iframe, open popup window
+    if (isInIframe) {
+      const width = 500;
+      const height = 700;
+      const left = (window.screen.width - width) / 2;
+      const top = (window.screen.height - height) / 2;
+      
+      window.open(
+        authUrl.toString(),
+        'Spotify Login',
+        `width=${width},height=${height},left=${left},top=${top}`
+      );
+    } else {
+      window.location.href = authUrl.toString();
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('spotify_token');
@@ -270,15 +325,29 @@ const handleLogin = async () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white p-4">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
+        {/* Header with Profile */}
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">Spotify Player</h1>
-          <button
-            onClick={handleLogout}
-            className="text-sm text-gray-400 hover:text-white"
-          >
-            Logout
-          </button>
+          <div className="flex items-center gap-3">
+            {userProfile && (
+              <div className="flex items-center gap-2">
+                {userProfile.images && userProfile.images[0] && (
+                  <img 
+                    src={userProfile.images[0].url} 
+                    alt={userProfile.display_name}
+                    className="w-10 h-10 rounded-full"
+                  />
+                )}
+                <span className="text-sm font-medium">{userProfile.display_name}</span>
+              </div>
+            )}
+            <button
+              onClick={handleLogout}
+              className="text-sm text-gray-400 hover:text-white"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         {/* Search */}
