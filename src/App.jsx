@@ -25,24 +25,34 @@ const SpotifyPlayer = () => {
     'user-modify-playback-state'
   ].join(' ');
 
-  // Get auth token from URL or localStorage
-  useEffect(() => {
-    const hash = window.location.hash;
-    let storedToken = localStorage.getItem('spotify_token');
+// Get auth token from URL or localStorage
+useEffect(() => {
+  const hash = window.location.hash;
+  let storedToken = window.localStorage.getItem('spotify_token');
 
-    if (!storedToken && hash) {
-      const params = new URLSearchParams(hash.substring(1));
-      storedToken = params.get('access_token');
-      if (storedToken) {
-        localStorage.setItem('spotify_token', storedToken);
-        window.history.replaceState({}, document.title, '/');
-      }
-    }
+  console.log('Current hash:', hash);
+  console.log('Stored token:', storedToken);
 
+  if (!storedToken && hash) {
+    const params = new URLSearchParams(hash.substring(1));
+    storedToken = params.get('access_token');
+    console.log('Token from URL:', storedToken);
+    
     if (storedToken) {
-      setToken(storedToken);
+      window.localStorage.setItem('spotify_token', storedToken);
+      // Clear the hash from URL
+      window.location.hash = '';
+      console.log('Token saved to localStorage');
     }
-  }, []);
+  }
+
+  if (storedToken) {
+    console.log('Setting token in state');
+    setToken(storedToken);
+  } else {
+    console.log('No token found');
+  }
+}, []);
 
   // Initialize Spotify Web Playback SDK
 useEffect(() => {
