@@ -10,6 +10,8 @@ const SpotifyNowPlaying = () => {
   const [volume, setVolume] = useState(50);
   const [playlists, setPlaylists] = useState([]);
   const [showPlaylists, setShowPlaylists] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   const CLIENT_ID = '8e9e53c5e52f4af0bd5a946e85736742';
   const REDIRECT_URI = window.location.origin + '/callback';
@@ -102,6 +104,8 @@ const SpotifyNowPlaying = () => {
           setIsPlaying(data.is_playing);
           setDevice(data.device);
           setVolume(data.device?.volume_percent || 50);
+          setProgress(data.progress_ms || 0);
+          setDuration(data.item.duration_ms || 0);
           
           // Check if track is liked
           const likedResponse = await fetch(
@@ -207,6 +211,26 @@ const SpotifyNowPlaying = () => {
     spotifyControl(`volume?volume_percent=${newVolume}`, 'PUT');
   };
 
+  const handleSeek = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const percent = (e.clientX - rect.left) / rect.width;
+    const newPosition = Math.floor(percent * duration);
+    setProgress(newPosition);
+    spotifyControl(`seek?position_ms=${newPosition}`, 'PUT');
+  };
+
+  const skipForward = () => {
+    const newPosition = Math.min(progress + 15000, duration);
+    setProgress(newPosition);
+    spotifyControl(`seek?position_ms=${newPosition}`, 'PUT');
+  };
+
+  const skipBackward = () => {
+    const newPosition = Math.max(progress - 15000, 0);
+    setProgress(newPosition);
+    spotifyControl(`seek?position_ms=${newPosition}`, 'PUT');
+  };
+
   const formatTime = (ms) => {
     const seconds = Math.floor(ms / 1000);
     const mins = Math.floor(seconds / 60);
@@ -275,16 +299,35 @@ const SpotifyNowPlaying = () => {
 
           {/* Progress Bar */}
           <div className="mb-6">
-            <div className="bg-gray-700 h-1 rounded-full overflow-hidden">
+            <div 
+              onClick={handleSeek}
+              className="bg-gray-700 h-1 rounded-full overflow-hidden cursor-pointer hover:h-1.5 transition-all"
+            >
               <div 
                 className="bg-green-500 h-full transition-all"
-                style={{ width: '0%' }}
+                style={{ width: `${(progress / duration) * 100}%` }}
               />
             </div>
             <div className="flex justify-between text-xs text-gray-400 mt-1">
-              <span>—</span>
-              <span>{formatTime(currentTrack.duration_ms)}</span>
+              <span>{formatTime(progress)}</span>
+              <span>{formatTime(duration)}</span>
             </div>
+          </div>
+
+          {/* Skip Position Controls */}
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <button
+              onClick={skipBackward}
+              className="text-gray-400 hover:text-white transition text-xs px-3 py-1 rounded-full bg-gray-800 hover:bg-gray-700"
+            >
+              -15s
+            </button>
+            <button
+              onClick={skipForward}
+              className="text-gray-400 hover:text-white transition text-xs px-3 py-1 rounded-full bg-gray-800 hover:bg-gray-700"
+            >
+              +15s
+            </button>
           </div>
 
           {/* Main Controls */}
