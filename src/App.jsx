@@ -142,10 +142,23 @@ const SpotifyPlayer = () => {
     };
   }, [isPlaying, duration]);
 
-  const handleLogin = () => {
-    const authUrl = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`;
-    window.location.href = authUrl;
-  };
+const handleLogin = async () => {
+  const codeVerifier = generateRandomString(64);
+  const hashed = await sha256(codeVerifier);
+  const codeChallenge = base64encode(hashed);
+
+  localStorage.setItem('code_verifier', codeVerifier);
+
+  const authUrl = new URL('https://accounts.spotify.com/authorize');
+  authUrl.searchParams.append('client_id', CLIENT_ID);
+  authUrl.searchParams.append('response_type', 'code');
+  authUrl.searchParams.append('redirect_uri', REDIRECT_URI);
+  authUrl.searchParams.append('scope', SCOPES);
+  authUrl.searchParams.append('code_challenge_method', 'S256');
+  authUrl.searchParams.append('code_challenge', codeChallenge);
+
+  window.location.href = authUrl.toString();
+};
 
   const handleLogout = () => {
     localStorage.removeItem('spotify_token');
