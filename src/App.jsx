@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Heart, Plus, Volume2, Music, X, List, Share2 } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Heart, Plus, Volume2, Music, X, List, Share2, Shuffle, Repeat, Repeat1 } from 'lucide-react';
 
 const SpotifyNowPlaying = () => {
   const [token, setToken] = useState(null);
@@ -16,6 +16,8 @@ const SpotifyNowPlaying = () => {
   const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
   const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
   const [discoverWeeklyUri, setDiscoverWeeklyUri] = useState(null);
+  const [shuffleState, setShuffleState] = useState(false);
+  const [repeatState, setRepeatState] = useState('off');
 
   const CLIENT_ID = '8e9e53c5e52f4af0bd5a946e85736742';
   const REDIRECT_URI = window.location.origin + '/callback';
@@ -105,6 +107,8 @@ const SpotifyNowPlaying = () => {
           setVolume(data.device?.volume_percent || 50);
           setProgress(data.progress_ms || 0);
           setDuration(data.item.duration_ms || 0);
+          setShuffleState(data.shuffle_state || false);
+          setRepeatState(data.repeat_state || 'off');
           
           const likedRes = await fetch(
             `https://api.spotify.com/v1/me/tracks/contains?ids=${data.item.id}`,
@@ -276,6 +280,26 @@ const SpotifyNowPlaying = () => {
     alert('Link copied to clipboard!');
   };
 
+  const toggleShuffle = async () => {
+    const newState = !shuffleState;
+    await fetch(`https://api.spotify.com/v1/me/player/shuffle?state=${newState}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    setShuffleState(newState);
+  };
+
+  const toggleRepeat = async () => {
+    const states = ['off', 'context', 'track'];
+    const currentIndex = states.indexOf(repeatState);
+    const newState = states[(currentIndex + 1) % states.length];
+    await fetch(`https://api.spotify.com/v1/me/player/repeat?state=${newState}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    setRepeatState(newState);
+  };
+
   const formatTime = (ms) => {
     const secs = Math.floor(ms / 1000);
     const mins = Math.floor(secs / 60);
@@ -332,7 +356,7 @@ const SpotifyNowPlaying = () => {
             {discoverWeeklyUri && (
               <button
                 onClick={() => playPlaylist(discoverWeeklyUri)}
-                className="bg-green-600 hover:bg-green-700 p-2 rounded-lg transition"
+                className="bg-gray-800 hover:bg-gray-700 p-2 rounded-lg transition"
                 title="Play Discover Weekly"
               >
                 <Play className="w-5 h-5" />
@@ -429,14 +453,32 @@ const SpotifyNowPlaying = () => {
 
           {/* Main Controls */}
           <div className="flex items-center justify-center gap-4 mb-6">
+            <button
+              onClick={toggleShuffle}
+              className={`p-2 rounded-full transition ${shuffleState ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
+              title="Shuffle"
+            >
+              <Shuffle className="w-5 h-5" />
+            </button>
+            
             <button onClick={skipPrevious} className="text-gray-400 hover:text-white p-2">
               <SkipBack className="w-7 h-7" />
             </button>
+            
             <button onClick={togglePlay} className="bg-white text-black rounded-full p-4 hover:scale-105 transition">
               {isPlaying ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7 ml-0.5" />}
             </button>
+            
             <button onClick={skipNext} className="text-gray-400 hover:text-white p-2">
               <SkipForward className="w-7 h-7" />
+            </button>
+            
+            <button
+              onClick={toggleRepeat}
+              className={`p-2 rounded-full transition ${repeatState !== 'off' ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
+              title={`Repeat: ${repeatState}`}
+            >
+              {repeatState === 'track' ? <Repeat1 className="w-5 h-5" /> : <Repeat className="w-5 h-5" />}
             </button>
           </div>
 
