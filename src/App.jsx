@@ -15,7 +15,7 @@ const SpotifyPlayer = () => {
   const intervalRef = useRef(null);
 
   // Configuration - Replace with your Spotify credentials
-  const CLIENT_ID = 'YOUR_SPOTIFY_CLIENT_ID';
+  const CLIENT_ID = '8e9e53c5e52f4af0bd5a946e85736742';
   const REDIRECT_URI = window.location.origin + '/callback';
   const SCOPES = [
     'streaming',
