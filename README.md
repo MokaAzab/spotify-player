@@ -6,15 +6,6 @@ A full-featured Spotify web player built with React and the Spotify Web Playback
 - Full-length song playback (Spotify Premium required)
 - Search tracks, artists, and albums
 - Playback controls (play, pause, skip, volume, seek)
-- Beautiful UI with album artwork
-
-## Setup
-1. Clone this repository
-2. Install dependencies: `npm install`
-3. Get your Spotify Client ID from https://developer.spotify.com/dashboard
-4. Update `CLIENT_ID` in `src/App.jsx`
-5. Run locally: `npm run dev`
-6. Deploy to Vercel
 
 ## Requirements
 - Spotify Premium account
