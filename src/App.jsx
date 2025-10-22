@@ -136,17 +136,16 @@ const SpotifyNowPlaying = () => {
         const items = data.items || [];
         setPlaylists(items);
         
-        // Find Discover Weekly - look for playlist with "discover" and "weekly" in name
-        const dw = items.find(p => {
-          const name = p.name.toLowerCase();
-          return name.includes('discover') && name.includes('weekly');
-        });
+        // Find the OFFICIAL Discover Weekly (owned by Spotify, exact name match)
+        const dw = items.find(p => 
+          p.name === 'Discover Weekly' && p.owner.display_name === 'Spotify'
+        );
         
         if (dw) {
           setDiscoverWeeklyUri(dw.uri);
-          console.log('Found playlist:', dw.name, dw.uri);
+          console.log('Found Discover Weekly:', dw.name, 'by', dw.owner.display_name);
         } else {
-          console.log('No Discover Weekly playlist found');
+          console.log('Discover Weekly not found. Try refreshing after adding it to your library.');
         }
       });
   }, [token]);
