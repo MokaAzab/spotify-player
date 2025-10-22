@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Heart, Plus, Volume2, Music, X, List, Share2, Shuffle, Repeat, Repeat1 } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Heart, Volume2, Music, Shuffle, Repeat, Repeat1, Share2 } from 'lucide-react';
 
-const SpotifyNowPlaying = () => {
+const SpotifyCodaEmbed = () => {
   const [token, setToken] = useState(null);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -10,14 +10,9 @@ const SpotifyNowPlaying = () => {
   const [volume, setVolume] = useState(50);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [playlists, setPlaylists] = useState([]);
-  const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
-  const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
-  const [discoverWeeklyUri, setDiscoverWeeklyUri] = useState(null);
   const [shuffleState, setShuffleState] = useState(false);
   const [repeatState, setRepeatState] = useState('off');
+  const [isInIframe, setIsInIframe] = useState(false);
 
   const CLIENT_ID = '8e9e53c5e52f4af0bd5a946e85736742';
   const REDIRECT_URI = window.location.origin + '/callback';
@@ -26,11 +21,13 @@ const SpotifyNowPlaying = () => {
     'user-modify-playback-state',
     'user-read-currently-playing',
     'user-library-read',
-    'user-library-modify',
-    'playlist-read-private',
-    'playlist-modify-public',
-    'playlist-modify-private'
+    'user-library-modify'
   ].join(' ');
+
+  // Check if in iframe
+  useEffect(() => {
+    setIsInIframe(window.self !== window.top);
+  }, []);
 
   // PKCE helpers
   const generateRandomString = (length) => {
@@ -49,6 +46,19 @@ const SpotifyNowPlaying = () => {
     return btoa(String.fromCharCode(...new Uint8Array(input)))
       .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   };
+
+  // Listen for auth messages from popup
+  useEffect(() => {
+    const handleMessage = (event) => {
+      if (event.data.type === 'spotify_auth' && event.data.token) {
+        localStorage.setItem('spotify_token', event.data.token);
+        setToken(event.data.token);
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   // Authentication
   useEffect(() => {
@@ -76,7 +86,17 @@ const SpotifyNowPlaying = () => {
             localStorage.setItem('spotify_token', data.access_token);
             localStorage.removeItem('code_verifier');
             setToken(data.access_token);
-            window.history.replaceState({}, document.title, '/');
+            
+            // If opened as popup, send token to parent
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'spotify_auth',
+                token: data.access_token
+              }, '*');
+              window.close();
+            } else {
+              window.history.replaceState({}, document.title, '/');
+            }
           }
         });
     } else if (storedToken) {
@@ -95,18 +115,11 @@ const SpotifyNowPlaying = () => {
         });
 
         if (response.status === 204 || response.status === 202) {
-          // No content or accepted - no active playback
           setCurrentTrack(null);
           return;
         }
 
-        if (!response.ok) {
-          // Skip error logging for expected errors
-          if (response.status !== 429 && response.status !== 401) {
-            console.warn('Playback fetch status:', response.status);
-          }
-          return;
-        }
+        if (!response.ok) return;
 
         const data = await response.json();
         if (data?.item) {
@@ -127,7 +140,7 @@ const SpotifyNowPlaying = () => {
           setIsLiked(liked);
         }
       } catch (error) {
-        // Silently handle network errors - they're usually temporary
+        // Silently handle errors
       }
     };
 
@@ -135,54 +148,6 @@ const SpotifyNowPlaying = () => {
     const interval = setInterval(fetchCurrent, 2000);
     return () => clearInterval(interval);
   }, [token]);
-
-  // Fetch playlists and set Discover Weekly
-  useEffect(() => {
-    if (!token) return;
-    
-    // Set Discover Weekly directly (official Spotify playlist URI)
-    setDiscoverWeeklyUri('spotify:playlist:37i9dQZEVXcVGx4nxRq9oL');
-    
-    // Fetch user playlists for the dropdown menu
-    const fetchAllPlaylists = async () => {
-      let allPlaylists = [];
-      let url = 'https://api.spotify.com/v1/me/playlists?limit=50';
-      
-      while (url && allPlaylists.length < 200) {
-        const res = await fetch(url, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await res.json();
-        allPlaylists = [...allPlaylists, ...(data.items || [])];
-        url = data.next;
-      }
-      
-      setPlaylists(allPlaylists);
-    };
-    
-    fetchAllPlaylists();
-  }, [token]);
-
-  // Search as you type
-  useEffect(() => {
-    if (searchQuery.length > 1) {
-      const timer = setTimeout(async () => {
-        try {
-          const response = await fetch(
-            `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=8`,
-            { headers: { 'Authorization': `Bearer ${token}` } }
-          );
-          const data = await response.json();
-          setSearchResults(data.tracks?.items || []);
-        } catch (error) {
-          console.error('Search error:', error);
-        }
-      }, 300);
-      return () => clearTimeout(timer);
-    } else {
-      setSearchResults([]);
-    }
-  }, [searchQuery, token]);
 
   const handleLogin = async () => {
     const codeVerifier = generateRandomString(64);
@@ -197,7 +162,22 @@ const SpotifyNowPlaying = () => {
     authUrl.searchParams.append('scope', SCOPES);
     authUrl.searchParams.append('code_challenge_method', 'S256');
     authUrl.searchParams.append('code_challenge', codeChallenge);
-    window.location.href = authUrl.toString();
+
+    // If in iframe, open popup
+    if (isInIframe) {
+      const width = 500;
+      const height = 700;
+      const left = (window.screen.width - width) / 2;
+      const top = (window.screen.height - height) / 2;
+      
+      window.open(
+        authUrl.toString(),
+        'Spotify Login',
+        `width=${width},height=${height},left=${left},top=${top}`
+      );
+    } else {
+      window.location.href = authUrl.toString();
+    }
   };
 
   const control = async (endpoint, method = 'PUT', body = null) => {
@@ -208,7 +188,7 @@ const SpotifyNowPlaying = () => {
         body: body ? JSON.stringify(body) : null
       });
     } catch (error) {
-      console.error('Control error:', error);
+      // Silently handle
     }
   };
 
@@ -220,18 +200,6 @@ const SpotifyNowPlaying = () => {
     const rect = e.currentTarget.getBoundingClientRect();
     const percent = (e.clientX - rect.left) / rect.width;
     const newPos = Math.floor(percent * duration);
-    setProgress(newPos);
-    control(`seek?position_ms=${newPos}`, 'PUT');
-  };
-
-  const skipForward = () => {
-    const newPos = Math.min(progress + 15000, duration);
-    setProgress(newPos);
-    control(`seek?position_ms=${newPos}`, 'PUT');
-  };
-
-  const skipBackward = () => {
-    const newPos = Math.max(progress - 15000, 0);
     setProgress(newPos);
     control(`seek?position_ms=${newPos}`, 'PUT');
   };
@@ -252,49 +220,9 @@ const SpotifyNowPlaying = () => {
     setIsLiked(!isLiked);
   };
 
-  const addToPlaylist = async (playlistId) => {
-    if (!currentTrack) return;
-    await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uris: [currentTrack.uri] })
-    });
-    setShowAddToPlaylist(false);
-    alert('Added to playlist!');
-  };
-
-  const playTrack = async (uri) => {
-    await fetch('https://api.spotify.com/v1/me/player/play', {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uris: [uri] })
-    });
-    setSearchQuery('');
-    setSearchResults([]);
-  };
-
-  const playPlaylist = async (uri) => {
-    await fetch('https://api.spotify.com/v1/me/player/play', {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ context_uri: uri })
-    });
-    setShowPlaylistMenu(false);
-  };
-
-  const shareTrack = () => {
-    if (!currentTrack) return;
-    const url = currentTrack.external_urls?.spotify || `https://open.spotify.com/track/${currentTrack.id}`;
-    navigator.clipboard.writeText(url);
-    alert('Link copied to clipboard!');
-  };
-
   const toggleShuffle = async () => {
     const newState = !shuffleState;
-    await fetch(`https://api.spotify.com/v1/me/player/shuffle?state=${newState}`, {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+    await control(`shuffle?state=${newState}`, 'PUT');
     setShuffleState(newState);
   };
 
@@ -302,11 +230,15 @@ const SpotifyNowPlaying = () => {
     const states = ['off', 'context', 'track'];
     const currentIndex = states.indexOf(repeatState);
     const newState = states[(currentIndex + 1) % states.length];
-    await fetch(`https://api.spotify.com/v1/me/player/repeat?state=${newState}`, {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+    await control(`repeat?state=${newState}`, 'PUT');
     setRepeatState(newState);
+  };
+
+  const shareTrack = () => {
+    if (!currentTrack) return;
+    const url = currentTrack.external_urls?.spotify || `https://open.spotify.com/track/${currentTrack.id}`;
+    navigator.clipboard.writeText(url);
+    alert('Link copied!');
   };
 
   const formatTime = (ms) => {
@@ -318,10 +250,12 @@ const SpotifyNowPlaying = () => {
   if (!token) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-green-900 via-black to-green-900">
-        <div className="text-center">
+        <div className="text-center p-6">
           <Music className="w-16 h-16 mx-auto mb-4 text-green-500" />
-          <h1 className="text-2xl font-bold text-white mb-3">Now Playing Widget</h1>
-          <p className="text-gray-400 mb-6 text-sm">Control your Spotify playback</p>
+          <h1 className="text-2xl font-bold text-white mb-3">Spotify Player</h1>
+          <p className="text-gray-400 mb-6 text-sm">
+            {isInIframe ? 'Click below to authenticate (popup window)' : 'Connect your Spotify account'}
+          </p>
           <button onClick={handleLogin} className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-full transition">
             Connect Spotify
           </button>
@@ -345,87 +279,8 @@ const SpotifyNowPlaying = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white p-4 flex items-center justify-center">
       <div className="w-full max-w-md">
-        {/* Search + Browse */}
-        <div className="mb-4">
-          <div className="flex gap-2 mb-2">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search for a song..."
-              className="flex-1 bg-gray-800 text-white px-4 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-            <button
-              onClick={() => setShowPlaylistMenu(!showPlaylistMenu)}
-              className="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg transition flex items-center gap-2"
-              title="Browse Playlists"
-            >
-              <List className="w-4 h-4" />
-            </button>
-            {discoverWeeklyUri && (
-              <button
-                onClick={() => playPlaylist(discoverWeeklyUri)}
-                className="bg-gray-800 hover:bg-gray-700 p-2 rounded-lg transition"
-                title="Play Discover Weekly"
-              >
-                <Play className="w-5 h-5" />
-              </button>
-            )}
-          </div>
-
-          {/* Search Results */}
-          {searchResults.length > 0 && (
-            <div className="bg-gray-800 rounded-lg p-2 mb-2 max-h-60 overflow-y-auto">
-              {searchResults.map((track) => (
-                <button
-                  key={track.id}
-                  onClick={() => playTrack(track.uri)}
-                  className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded transition"
-                >
-                  <img src={track.album.images[2]?.url} alt="" className="w-10 h-10 rounded" />
-                  <div className="flex-1 text-left min-w-0">
-                    <p className="text-sm font-medium truncate">{track.name}</p>
-                    <p className="text-xs text-gray-400 truncate">
-                      {track.artists.map(a => a.name).join(', ')}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Playlist Menu */}
-          {showPlaylistMenu && (
-            <div className="bg-gray-800 rounded-lg p-3 mb-2 max-h-60 overflow-y-auto">
-              <div className="flex justify-between items-center mb-2">
-                <p className="text-xs text-gray-400 font-semibold">PLAY PLAYLIST</p>
-                <button onClick={() => setShowPlaylistMenu(false)} className="text-gray-400">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              {playlists.map((playlist) => (
-                <button
-                  key={playlist.id}
-                  onClick={() => playPlaylist(playlist.uri)}
-                  className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-sm transition"
-                >
-                  <div className="w-8 h-8 bg-gray-700 rounded flex items-center justify-center text-xs">
-                    {playlist.images?.[0]?.url ? (
-                      <img src={playlist.images[0].url} alt="" className="w-8 h-8 rounded" />
-                    ) : '♪'}
-                  </div>
-                  <div className="flex-1 text-left min-w-0">
-                    <p className="truncate">{playlist.name}</p>
-                    <p className="text-xs text-gray-400">{playlist.tracks.total} tracks</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Now Playing Card */}
         <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 shadow-2xl">
+          {/* Album Art */}
           <div className="relative mb-4">
             <img src={currentTrack.album.images[0]?.url} alt="" className="w-full aspect-square rounded-lg" />
             {device && (
@@ -436,6 +291,7 @@ const SpotifyNowPlaying = () => {
             )}
           </div>
 
+          {/* Track Info */}
           <div className="mb-4">
             <h2 className="text-xl font-bold mb-1 truncate">{currentTrack.name}</h2>
             <p className="text-gray-400 text-sm truncate">
@@ -454,38 +310,30 @@ const SpotifyNowPlaying = () => {
             </div>
           </div>
 
-          {/* Skip buttons */}
-          <div className="flex justify-center gap-2 mb-4">
-            <button onClick={skipBackward} className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1 rounded-full">-15s</button>
-            <button onClick={skipForward} className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1 rounded-full">+15s</button>
-          </div>
-
           {/* Main Controls */}
-          <div className="flex items-center justify-center gap-4 mb-6">
+          <div className="flex items-center justify-center gap-4 mb-4">
             <button
               onClick={toggleShuffle}
               className={`p-2 rounded-full transition ${shuffleState ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
-              title="Shuffle"
             >
               <Shuffle className="w-5 h-5" />
             </button>
             
             <button onClick={skipPrevious} className="text-gray-400 hover:text-white p-2">
-              <SkipBack className="w-7 h-7" />
+              <SkipBack className="w-6 h-6" />
             </button>
             
-            <button onClick={togglePlay} className="bg-white text-black rounded-full p-4 hover:scale-105 transition">
-              {isPlaying ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7 ml-0.5" />}
+            <button onClick={togglePlay} className="bg-white text-black rounded-full p-3 hover:scale-105 transition">
+              {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
             </button>
             
             <button onClick={skipNext} className="text-gray-400 hover:text-white p-2">
-              <SkipForward className="w-7 h-7" />
+              <SkipForward className="w-6 h-6" />
             </button>
             
             <button
               onClick={toggleRepeat}
               className={`p-2 rounded-full transition ${repeatState !== 'off' ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
-              title={`Repeat: ${repeatState}`}
             >
               {repeatState === 'track' ? <Repeat1 className="w-5 h-5" /> : <Repeat className="w-5 h-5" />}
             </button>
@@ -493,33 +341,13 @@ const SpotifyNowPlaying = () => {
 
           {/* Actions */}
           <div className="flex justify-center gap-3 mb-4">
-            <button onClick={toggleLike} className={`p-2 rounded-full ${isLiked ? 'text-green-500' : 'text-gray-400 hover:text-white'}`} title="Like">
-              <Heart className={`w-6 h-6 ${isLiked ? 'fill-current' : ''}`} />
+            <button onClick={toggleLike} className={`p-2 rounded-full ${isLiked ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}>
+              <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
             </button>
-            <button onClick={() => setShowAddToPlaylist(!showAddToPlaylist)} className="p-2 rounded-full text-gray-400 hover:text-white" title="Add to Playlist">
-              <Plus className="w-6 h-6" />
-            </button>
-            <button onClick={shareTrack} className="p-2 rounded-full text-gray-400 hover:text-white" title="Share">
-              <Share2 className="w-6 h-6" />
+            <button onClick={shareTrack} className="p-2 rounded-full text-gray-400 hover:text-white">
+              <Share2 className="w-5 h-5" />
             </button>
           </div>
-
-          {/* Add to Playlist */}
-          {showAddToPlaylist && (
-            <div className="bg-gray-800 rounded-lg p-3 mb-4 max-h-48 overflow-y-auto">
-              <div className="flex justify-between mb-2">
-                <p className="text-xs text-gray-400">Add to playlist:</p>
-                <button onClick={() => setShowAddToPlaylist(false)}>
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              {playlists.map((p) => (
-                <button key={p.id} onClick={() => addToPlaylist(p.id)} className="w-full text-left px-3 py-2 hover:bg-gray-700 rounded text-sm">
-                  {p.name}
-                </button>
-              ))}
-            </div>
-          )}
 
           {/* Volume */}
           <div className="flex items-center gap-3">
@@ -541,4 +369,4 @@ const SpotifyNowPlaying = () => {
   );
 };
 
-export default SpotifyNowPlaying;
+export default SpotifyCodaEmbed;
