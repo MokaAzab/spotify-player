@@ -383,49 +383,49 @@ const SpotifyPlayer = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white p-3 flex items-center justify-center">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white p-2 flex items-center justify-center">
+      <div className="w-full max-w-xs">
         {/* Search + Browse */}
-        <div className="mb-3">
-          <div className="flex gap-2 mb-2">
+        <div className="mb-2">
+          <div className="flex gap-1.5 mb-1.5">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search for a song..."
-              className="flex-1 bg-gray-800 text-white px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              placeholder="Search..."
+              className="flex-1 bg-gray-800 text-white px-2 py-1.5 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
             />
             <button
               onClick={() => setShowPlaylistMenu(!showPlaylistMenu)}
-              className="bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded-lg transition flex items-center gap-2"
-              title="Browse Playlists"
+              className="bg-gray-800 hover:bg-gray-700 px-2 py-1.5 rounded transition"
+              title="Playlists"
             >
-              <List className="w-4 h-4" />
+              <List className="w-3.5 h-3.5" />
             </button>
             {discoverWeeklyUri && (
               <button
                 onClick={() => playPlaylist(discoverWeeklyUri)}
-                className="bg-gray-800 hover:bg-gray-700 p-2 rounded-lg transition"
-                title="Play Discover Weekly"
+                className="bg-gray-800 hover:bg-gray-700 p-1.5 rounded transition"
+                title="Discover Weekly"
               >
-                <Play className="w-4 h-4" />
+                <Play className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
           {/* Search Results */}
           {searchResults.length > 0 && (
-            <div className="bg-gray-800 rounded-lg p-2 mb-2 max-h-48 overflow-y-auto">
+            <div className="bg-gray-800 rounded p-1.5 mb-1.5 max-h-32 overflow-y-auto">
               {searchResults.map((track) => (
                 <button
                   key={track.id}
                   onClick={() => playTrack(track.uri)}
-                  className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded transition text-sm"
+                  className="w-full flex items-center gap-1.5 p-1 hover:bg-gray-700 rounded transition"
                 >
-                  <img src={track.album.images[2]?.url} alt="" className="w-8 h-8 rounded" />
+                  <img src={track.album.images[2]?.url} alt="" className="w-6 h-6 rounded" />
                   <div className="flex-1 text-left min-w-0">
-                    <p className="text-xs font-medium truncate">{track.name}</p>
-                    <p className="text-xs text-gray-400 truncate">
+                    <p className="text-xs font-medium truncate leading-tight">{track.name}</p>
+                    <p className="text-xs text-gray-400 truncate leading-tight">
                       {track.artists.map(a => a.name).join(', ')}
                     </p>
                   </div>
@@ -436,8 +436,8 @@ const SpotifyPlayer = () => {
 
           {/* Playlist Menu */}
           {showPlaylistMenu && (
-            <div className="bg-gray-800 rounded-lg p-2 mb-2 max-h-48 overflow-y-auto">
-              <div className="flex justify-between items-center mb-2 px-1">
+            <div className="bg-gray-800 rounded p-1.5 mb-1.5 max-h-32 overflow-y-auto">
+              <div className="flex justify-between items-center mb-1 px-1">
                 <p className="text-xs text-gray-400 font-semibold">PLAYLISTS</p>
                 <button onClick={() => setShowPlaylistMenu(false)} className="text-gray-400">
                   <X className="w-3 h-3" />
@@ -447,16 +447,15 @@ const SpotifyPlayer = () => {
                 <button
                   key={playlist.id}
                   onClick={() => playPlaylist(playlist.uri)}
-                  className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-sm transition"
+                  className="w-full flex items-center gap-1.5 p-1 hover:bg-gray-700 rounded transition"
                 >
-                  <div className="w-8 h-8 bg-gray-700 rounded flex items-center justify-center text-xs">
+                  <div className="w-6 h-6 bg-gray-700 rounded flex items-center justify-center">
                     {playlist.images?.[0]?.url ? (
-                      <img src={playlist.images[0].url} alt="" className="w-8 h-8 rounded" />
-                    ) : '♪'}
+                      <img src={playlist.images[0].url} alt="" className="w-6 h-6 rounded" />
+                    ) : <span className="text-xs">♪</span>}
                   </div>
                   <div className="flex-1 text-left min-w-0">
-                    <p className="text-xs truncate">{playlist.name}</p>
-                    <p className="text-xs text-gray-400">{playlist.tracks.total} tracks</p>
+                    <p className="text-xs truncate leading-tight">{playlist.name}</p>
                   </div>
                 </button>
               ))}
@@ -465,115 +464,115 @@ const SpotifyPlayer = () => {
         </div>
 
         {/* Now Playing Card */}
-        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl p-4 shadow-2xl">
-          {/* Album Art */}
-          <div className="relative mb-3">
-            <img src={currentTrack.album.images[0]?.url} alt="" className="w-full aspect-square rounded-lg" />
+        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg p-3 shadow-2xl">
+          {/* Compact Album Art */}
+          <div className="relative mb-2">
+            <img src={currentTrack.album.images[0]?.url} alt="" className="w-full aspect-square rounded" />
             {device && (
-              <div className="absolute top-2 right-2 bg-black bg-opacity-70 px-2 py-1 rounded-full text-xs flex items-center gap-1">
-                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+              <div className="absolute top-1.5 right-1.5 bg-black bg-opacity-70 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                <div className="w-1 h-1 bg-green-500 rounded-full animate-pulse"></div>
                 <span className="text-xs">{device.name}</span>
               </div>
             )}
           </div>
 
-          {/* Track Info */}
-          <div className="mb-3">
-            <h2 className="text-lg font-bold truncate leading-tight">{currentTrack.name}</h2>
-            <p className="text-gray-400 text-xs truncate">
+          {/* Compact Track Info */}
+          <div className="mb-2">
+            <h2 className="text-sm font-bold truncate leading-tight">{currentTrack.name}</h2>
+            <p className="text-gray-400 text-xs truncate leading-tight">
               {currentTrack.artists.map(a => a.name).join(', ')}
             </p>
           </div>
 
           {/* Progress */}
-          <div className="mb-3">
-            <div onClick={handleSeek} className="bg-gray-700 h-1 rounded-full cursor-pointer">
-              <div className="bg-green-500 h-full" style={{ width: `${(progress / duration) * 100}%` }} />
+          <div className="mb-2">
+            <div onClick={handleSeek} className="bg-gray-700 h-0.5 rounded-full cursor-pointer">
+              <div className="bg-green-500 h-full rounded-full" style={{ width: `${(progress / duration) * 100}%` }} />
             </div>
-            <div className="flex justify-between text-xs text-gray-400 mt-1">
+            <div className="flex justify-between text-xs text-gray-400 mt-0.5">
               <span>{formatTime(progress)}</span>
               <span>{formatTime(duration)}</span>
             </div>
           </div>
 
           {/* Skip buttons */}
-          <div className="flex justify-center gap-2 mb-3">
-            <button onClick={skipBackward} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded-full">-15s</button>
-            <button onClick={skipForward} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded-full">+15s</button>
+          <div className="flex justify-center gap-1.5 mb-2">
+            <button onClick={skipBackward} className="text-xs bg-gray-800 hover:bg-gray-700 px-1.5 py-0.5 rounded-full">-15s</button>
+            <button onClick={skipForward} className="text-xs bg-gray-800 hover:bg-gray-700 px-1.5 py-0.5 rounded-full">+15s</button>
           </div>
 
           {/* Main Controls */}
-          <div className="flex items-center justify-center gap-3 mb-3">
+          <div className="flex items-center justify-center gap-2 mb-2">
             <button
               onClick={toggleShuffle}
-              className={`p-1.5 rounded-full transition ${shuffleState ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
+              className={`p-1 rounded-full transition ${shuffleState ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
             >
-              <Shuffle className="w-4 h-4" />
+              <Shuffle className="w-3.5 h-3.5" />
             </button>
             
-            <button onClick={skipPrevious} className="text-gray-400 hover:text-white p-1">
-              <SkipBack className="w-5 h-5" />
+            <button onClick={skipPrevious} className="text-gray-400 hover:text-white p-0.5">
+              <SkipBack className="w-4 h-4" />
             </button>
             
-            <button onClick={togglePlay} className="bg-white text-black rounded-full p-2.5 hover:scale-105 transition">
-              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+            <button onClick={togglePlay} className="bg-white text-black rounded-full p-2 hover:scale-105 transition">
+              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
             </button>
             
-            <button onClick={skipNext} className="text-gray-400 hover:text-white p-1">
-              <SkipForward className="w-5 h-5" />
+            <button onClick={skipNext} className="text-gray-400 hover:text-white p-0.5">
+              <SkipForward className="w-4 h-4" />
             </button>
             
             <button
               onClick={toggleRepeat}
-              className={`p-1.5 rounded-full transition ${repeatState !== 'off' ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
+              className={`p-1 rounded-full transition ${repeatState !== 'off' ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
             >
-              {repeatState === 'track' ? <Repeat1 className="w-4 h-4" /> : <Repeat className="w-4 h-4" />}
+              {repeatState === 'track' ? <Repeat1 className="w-3.5 h-3.5" /> : <Repeat className="w-3.5 h-3.5" />}
             </button>
           </div>
 
           {/* Actions */}
-          <div className="flex justify-center gap-2 mb-3">
-            <button onClick={toggleLike} className={`p-1.5 rounded-full ${isLiked ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}>
-              <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
+          <div className="flex justify-center gap-1.5 mb-2">
+            <button onClick={toggleLike} className={`p-1 rounded-full ${isLiked ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}>
+              <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-current' : ''}`} />
             </button>
-            <button onClick={() => setShowAddToPlaylist(!showAddToPlaylist)} className="p-1.5 rounded-full text-gray-400 hover:text-white">
-              <Plus className="w-4 h-4" />
+            <button onClick={() => setShowAddToPlaylist(!showAddToPlaylist)} className="p-1 rounded-full text-gray-400 hover:text-white">
+              <Plus className="w-3.5 h-3.5" />
             </button>
-            <button onClick={shareTrack} className="p-1.5 rounded-full text-gray-400 hover:text-white">
-              <Share2 className="w-4 h-4" />
+            <button onClick={shareTrack} className="p-1 rounded-full text-gray-400 hover:text-white">
+              <Share2 className="w-3.5 h-3.5" />
             </button>
           </div>
 
           {/* Add to Playlist */}
           {showAddToPlaylist && (
-            <div className="bg-gray-800 rounded-lg p-2 mb-3 max-h-36 overflow-y-auto">
-              <div className="flex justify-between mb-2">
-                <p className="text-xs text-gray-400">Add to playlist:</p>
+            <div className="bg-gray-800 rounded p-1.5 mb-2 max-h-24 overflow-y-auto">
+              <div className="flex justify-between mb-1">
+                <p className="text-xs text-gray-400">Add to:</p>
                 <button onClick={() => setShowAddToPlaylist(false)}>
                   <X className="w-3 h-3" />
                 </button>
               </div>
               {playlists.map((p) => (
-                <button key={p.id} onClick={() => addToPlaylist(p.id)} className="w-full text-left px-2 py-1.5 hover:bg-gray-700 rounded text-xs">
+                <button key={p.id} onClick={() => addToPlaylist(p.id)} className="w-full text-left px-1.5 py-1 hover:bg-gray-700 rounded text-xs">
                   {p.name}
                 </button>
               ))}
             </div>
           )}
 
-          {/* Volume */}
-          <div className="flex items-center gap-2">
-            <Volume2 className="w-3.5 h-3.5 text-gray-400" />
+          {/* Compact Volume */}
+          <div className="flex items-center gap-1.5">
+            <Volume2 className="w-3 h-3 text-gray-400" />
             <input
               type="range"
               min="0"
               max="100"
               value={volume}
               onChange={handleVolume}
-              className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              className="flex-1 h-0.5 bg-gray-700 rounded-lg appearance-none cursor-pointer"
               style={{ background: `linear-gradient(to right, #22c55e 0%, #22c55e ${volume}%, #374151 ${volume}%, #374151 100%)` }}
             />
-            <span className="text-xs text-gray-400 w-7 text-right">{volume}%</span>
+            <span className="text-xs text-gray-400 w-6 text-right">{volume}%</span>
           </div>
         </div>
       </div>
