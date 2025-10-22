@@ -381,13 +381,47 @@ const SpotifyNowPlaying = () => {
               className={`py-2 px-4 rounded-lg transition flex items-center gap-2 ${
                 showPlaylistPicker ? 'bg-green-600' : 'bg-gray-800 hover:bg-gray-700'
               }`}
+              title="Play Playlist"
             >
               <List className="w-4 h-4" />
             </button>
           </div>
 
+          {/* Playlist Picker - Similar to Add to Playlist */}
+          {showPlaylistPicker && (
+            <div className="bg-gray-800 rounded-lg p-3 max-h-64 overflow-y-auto mb-4">
+              <div className="flex justify-between items-center mb-2">
+                <p className="text-xs text-gray-400 font-semibold">PLAY PLAYLIST:</p>
+                <button
+                  onClick={() => setShowPlaylistPicker(false)}
+                  className="text-gray-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {userPlaylists.map(playlist => (
+                <button
+                  key={playlist.id}
+                  onClick={() => playPlaylist(playlist.uri)}
+                  className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-sm transition"
+                >
+                  <img 
+                    src={playlist.images?.[0]?.url || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"%3E%3Crect width="40" height="40" fill="%23333"/%3E%3Ctext x="20" y="20" text-anchor="middle" dominant-baseline="middle" fill="%23666" font-size="20"%3E♪%3C/text%3E%3C/svg%3E'} 
+                    alt="" 
+                    className="w-8 h-8 rounded"
+                  />
+                  <div className="flex-1 text-left min-w-0">
+                    <p className="truncate">{playlist.name}</p>
+                    <p className="text-xs text-gray-400">{playlist.tracks.total} tracks</p>
+                  </div>
+                  <Play className="w-4 h-4 text-gray-400" />
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Search Results Dropdown */}
-          {showSearch && searchResults.tracks.length > 0 && (
+          {showSearch && searchQuery && searchResults.tracks.length > 0 && (
             <div className="absolute top-full left-0 right-0 mt-2 bg-gray-800 rounded-lg shadow-2xl z-50 max-h-80 overflow-y-auto">
               {searchResults.tracks.map((track) => (
                 <button
