@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Heart, Plus, Volume2, Music, X } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Heart, Plus, Volume2, Music, X, List, Share2 } from 'lucide-react';
 
 const SpotifyNowPlaying = () => {
   const [token, setToken] = useState(null);
@@ -15,6 +15,7 @@ const SpotifyNowPlaying = () => {
   const [playlists, setPlaylists] = useState([]);
   const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
   const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
+  const [discoverWeeklyUri, setDiscoverWeeklyUri] = useState(null);
 
   const CLIENT_ID = '8e9e53c5e52f4af0bd5a946e85736742';
   const REDIRECT_URI = window.location.origin + '/callback';
@@ -129,7 +130,12 @@ const SpotifyNowPlaying = () => {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(res => res.json())
-      .then(data => setPlaylists(data.items || []));
+      .then(data => {
+        setPlaylists(data.items || []);
+        // Find Discover Weekly
+        const dw = data.items?.find(p => p.name === 'Discover Weekly');
+        if (dw) setDiscoverWeeklyUri(dw.uri);
+      });
   }, [token]);
 
   // Search as you type
@@ -251,6 +257,13 @@ const SpotifyNowPlaying = () => {
     setShowPlaylistMenu(false);
   };
 
+  const shareTrack = () => {
+    if (!currentTrack) return;
+    const url = currentTrack.external_urls?.spotify || `https://open.spotify.com/track/${currentTrack.id}`;
+    navigator.clipboard.writeText(url);
+    alert('Link copied to clipboard!');
+  };
+
   const formatTime = (ms) => {
     const secs = Math.floor(ms / 1000);
     const mins = Math.floor(secs / 60);
@@ -299,10 +312,20 @@ const SpotifyNowPlaying = () => {
             />
             <button
               onClick={() => setShowPlaylistMenu(!showPlaylistMenu)}
-              className="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg text-sm transition"
+              className="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg transition flex items-center gap-2"
+              title="Browse Playlists"
             >
-              📋 Playlists
+              <List className="w-4 h-4" />
             </button>
+            {discoverWeeklyUri && (
+              <button
+                onClick={() => playPlaylist(discoverWeeklyUri)}
+                className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg transition text-sm whitespace-nowrap"
+                title="Play Discover Weekly"
+              >
+                🎧 DW
+              </button>
+            )}
           </div>
 
           {/* Search Results */}
@@ -407,11 +430,14 @@ const SpotifyNowPlaying = () => {
 
           {/* Actions */}
           <div className="flex justify-center gap-3 mb-4">
-            <button onClick={toggleLike} className={`p-2 rounded-full ${isLiked ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}>
+            <button onClick={toggleLike} className={`p-2 rounded-full ${isLiked ? 'text-green-500' : 'text-gray-400 hover:text-white'}`} title="Like">
               <Heart className={`w-6 h-6 ${isLiked ? 'fill-current' : ''}`} />
             </button>
-            <button onClick={() => setShowAddToPlaylist(!showAddToPlaylist)} className="p-2 rounded-full text-gray-400 hover:text-white">
+            <button onClick={() => setShowAddToPlaylist(!showAddToPlaylist)} className="p-2 rounded-full text-gray-400 hover:text-white" title="Add to Playlist">
               <Plus className="w-6 h-6" />
+            </button>
+            <button onClick={shareTrack} className="p-2 rounded-full text-gray-400 hover:text-white" title="Share">
+              <Share2 className="w-6 h-6" />
             </button>
           </div>
 
