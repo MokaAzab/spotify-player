@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Heart, Plus, Volume2, Music, Search, List, X } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Heart, Plus, Volume2, Music, X } from 'lucide-react';
 
 const SpotifyNowPlaying = () => {
   const [token, setToken] = useState(null);
@@ -8,15 +8,13 @@ const SpotifyNowPlaying = () => {
   const [device, setDevice] = useState(null);
   const [isLiked, setIsLiked] = useState(false);
   const [volume, setVolume] = useState(50);
-  const [playlists, setPlaylists] = useState([]);
-  const [showPlaylists, setShowPlaylists] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState({ tracks: [], playlists: [] });
-  const [showSearch, setShowSearch] = useState(false);
-  const [userPlaylists, setUserPlaylists] = useState([]);
-  const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [playlists, setPlaylists] = useState([]);
+  const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
+  const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
 
   const CLIENT_ID = '8e9e53c5e52f4af0bd5a946e85736742';
   const REDIRECT_URI = window.location.origin + '/callback';
@@ -31,7 +29,7 @@ const SpotifyNowPlaying = () => {
     'playlist-modify-private'
   ].join(' ');
 
-  // PKCE helper functions
+  // PKCE helpers
   const generateRandomString = (length) => {
     const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     const values = crypto.getRandomValues(new Uint8Array(length));
@@ -46,9 +44,7 @@ const SpotifyNowPlaying = () => {
 
   const base64encode = (input) => {
     return btoa(String.fromCharCode(...new Uint8Array(input)))
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
+      .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   };
 
   // Authentication
@@ -62,9 +58,7 @@ const SpotifyNowPlaying = () => {
       
       fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           client_id: CLIENT_ID,
           grant_type: 'authorization_code',
@@ -81,18 +75,17 @@ const SpotifyNowPlaying = () => {
             setToken(data.access_token);
             window.history.replaceState({}, document.title, '/');
           }
-        })
-        .catch(error => console.error('Token exchange error:', error));
+        });
     } else if (storedToken) {
       setToken(storedToken);
     }
   }, []);
 
-  // Fetch currently playing track
+  // Fetch current track
   useEffect(() => {
     if (!token) return;
 
-    const fetchCurrentTrack = async () => {
+    const fetchCurrent = async () => {
       try {
         const response = await fetch('https://api.spotify.com/v1/me/player', {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -104,7 +97,7 @@ const SpotifyNowPlaying = () => {
         }
 
         const data = await response.json();
-        if (data && data.item) {
+        if (data?.item) {
           setCurrentTrack(data.item);
           setIsPlaying(data.is_playing);
           setDevice(data.device);
@@ -112,44 +105,58 @@ const SpotifyNowPlaying = () => {
           setProgress(data.progress_ms || 0);
           setDuration(data.item.duration_ms || 0);
           
-          // Check if track is liked
-          const likedResponse = await fetch(
+          const likedRes = await fetch(
             `https://api.spotify.com/v1/me/tracks/contains?ids=${data.item.id}`,
             { headers: { 'Authorization': `Bearer ${token}` } }
           );
-          const [liked] = await likedResponse.json();
+          const [liked] = await likedRes.json();
           setIsLiked(liked);
         }
       } catch (error) {
-        console.error('Error fetching playback:', error);
+        console.error('Playback error:', error);
       }
     };
 
-    fetchCurrentTrack();
-    const interval = setInterval(fetchCurrentTrack, 2000);
+    fetchCurrent();
+    const interval = setInterval(fetchCurrent, 2000);
     return () => clearInterval(interval);
   }, [token]);
 
   // Fetch playlists
   useEffect(() => {
     if (!token) return;
-
     fetch('https://api.spotify.com/v1/me/playlists?limit=50', {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(res => res.json())
-      .then(data => {
-        setPlaylists(data.items || []);
-        setUserPlaylists(data.items || []);
-      })
-      .catch(error => console.error('Error fetching playlists:', error));
+      .then(data => setPlaylists(data.items || []));
   }, [token]);
+
+  // Search as you type
+  useEffect(() => {
+    if (searchQuery.length > 1) {
+      const timer = setTimeout(async () => {
+        try {
+          const response = await fetch(
+            `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=8`,
+            { headers: { 'Authorization': `Bearer ${token}` } }
+          );
+          const data = await response.json();
+          setSearchResults(data.tracks?.items || []);
+        } catch (error) {
+          console.error('Search error:', error);
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    } else {
+      setSearchResults([]);
+    }
+  }, [searchQuery, token]);
 
   const handleLogin = async () => {
     const codeVerifier = generateRandomString(64);
     const hashed = await sha256(codeVerifier);
     const codeChallenge = base64encode(hashed);
-
     localStorage.setItem('code_verifier', codeVerifier);
 
     const authUrl = new URL('https://accounts.spotify.com/authorize');
@@ -159,18 +166,14 @@ const SpotifyNowPlaying = () => {
     authUrl.searchParams.append('scope', SCOPES);
     authUrl.searchParams.append('code_challenge_method', 'S256');
     authUrl.searchParams.append('code_challenge', codeChallenge);
-
     window.location.href = authUrl.toString();
   };
 
-  const spotifyControl = async (endpoint, method = 'PUT', body = null) => {
+  const control = async (endpoint, method = 'PUT', body = null) => {
     try {
       await fetch(`https://api.spotify.com/v1/me/player/${endpoint}`, {
         method,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : null
       });
     } catch (error) {
@@ -178,16 +181,38 @@ const SpotifyNowPlaying = () => {
     }
   };
 
-  const togglePlayPause = () => {
-    spotifyControl(isPlaying ? 'pause' : 'play');
+  const togglePlay = () => control(isPlaying ? 'pause' : 'play');
+  const skipNext = () => control('next', 'POST');
+  const skipPrevious = () => control('previous', 'POST');
+  
+  const handleSeek = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const percent = (e.clientX - rect.left) / rect.width;
+    const newPos = Math.floor(percent * duration);
+    setProgress(newPos);
+    control(`seek?position_ms=${newPos}`, 'PUT');
   };
 
-  const skipNext = () => spotifyControl('next', 'POST');
-  const skipPrevious = () => spotifyControl('previous', 'POST');
+  const skipForward = () => {
+    const newPos = Math.min(progress + 15000, duration);
+    setProgress(newPos);
+    control(`seek?position_ms=${newPos}`, 'PUT');
+  };
+
+  const skipBackward = () => {
+    const newPos = Math.max(progress - 15000, 0);
+    setProgress(newPos);
+    control(`seek?position_ms=${newPos}`, 'PUT');
+  };
+
+  const handleVolume = (e) => {
+    const newVol = parseInt(e.target.value);
+    setVolume(newVol);
+    control(`volume?volume_percent=${newVol}`, 'PUT');
+  };
 
   const toggleLike = async () => {
     if (!currentTrack) return;
-    
     const method = isLiked ? 'DELETE' : 'PUT';
     await fetch(`https://api.spotify.com/v1/me/tracks?ids=${currentTrack.id}`, {
       method,
@@ -198,121 +223,38 @@ const SpotifyNowPlaying = () => {
 
   const addToPlaylist = async (playlistId) => {
     if (!currentTrack) return;
-    
     await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        uris: [currentTrack.uri]
-      })
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uris: [currentTrack.uri] })
     });
-    setShowPlaylists(false);
+    setShowAddToPlaylist(false);
     alert('Added to playlist!');
   };
 
-  const handleVolumeChange = (e) => {
-    const newVolume = parseInt(e.target.value);
-    setVolume(newVolume);
-    spotifyControl(`volume?volume_percent=${newVolume}`, 'PUT');
-  };
-
-  const handleSeek = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const percent = (e.clientX - rect.left) / rect.width;
-    const newPosition = Math.floor(percent * duration);
-    setProgress(newPosition);
-    spotifyControl(`seek?position_ms=${newPosition}`, 'PUT');
-  };
-
-  const skipForward = () => {
-    const newPosition = Math.min(progress + 15000, duration);
-    setProgress(newPosition);
-    spotifyControl(`seek?position_ms=${newPosition}`, 'PUT');
-  };
-
-  const skipBackward = () => {
-    const newPosition = Math.max(progress - 15000, 0);
-    setProgress(newPosition);
-    spotifyControl(`seek?position_ms=${newPosition}`, 'PUT');
-  };
-
-  const searchSpotify = async () => {
-    if (!searchQuery.trim()) {
-      setSearchResults({ tracks: [], playlists: [] });
-      return;
-    }
-
-    try {
-      const response = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=8`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
-      const data = await response.json();
-      setSearchResults({
-        tracks: data.tracks?.items || [],
-        playlists: []
-      });
-    } catch (error) {
-      console.error('Search error:', error);
-    }
-  };
-
-  // Search as user types
-  useEffect(() => {
-    if (showSearch && searchQuery.length > 1) {
-      const delaySearch = setTimeout(() => {
-        searchSpotify();
-      }, 300);
-      return () => clearTimeout(delaySearch);
-    } else if (searchQuery.length <= 1) {
-      setSearchResults({ tracks: [], playlists: [] });
-    }
-  }, [searchQuery, showSearch]);
-
   const playTrack = async (uri) => {
-    try {
-      await fetch('https://api.spotify.com/v1/me/player/play', {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ uris: [uri] })
-      });
-      setShowSearch(false);
-      setSearchQuery('');
-      setSearchResults({ tracks: [], playlists: [] });
-    } catch (error) {
-      console.error('Play error:', error);
-    }
+    await fetch('https://api.spotify.com/v1/me/player/play', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uris: [uri] })
+    });
+    setSearchQuery('');
+    setSearchResults([]);
   };
 
-  const playPlaylist = async (contextUri) => {
-    try {
-      await fetch('https://api.spotify.com/v1/me/player/play', {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ context_uri: contextUri })
-      });
-      setShowPlaylistPicker(false);
-    } catch (error) {
-      console.error('Play error:', error);
-    }
+  const playPlaylist = async (uri) => {
+    await fetch('https://api.spotify.com/v1/me/player/play', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context_uri: uri })
+    });
+    setShowPlaylistMenu(false);
   };
 
   const formatTime = (ms) => {
-    const seconds = Math.floor(ms / 1000);
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    const secs = Math.floor(ms / 1000);
+    const mins = Math.floor(secs / 60);
+    return `${mins}:${(secs % 60).toString().padStart(2, '0')}`;
   };
 
   if (!token) {
@@ -322,10 +264,7 @@ const SpotifyNowPlaying = () => {
           <Music className="w-16 h-16 mx-auto mb-4 text-green-500" />
           <h1 className="text-2xl font-bold text-white mb-3">Now Playing Widget</h1>
           <p className="text-gray-400 mb-6 text-sm">Control your Spotify playback</p>
-          <button
-            onClick={handleLogin}
-            className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-full transition"
-          >
+          <button onClick={handleLogin} className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-full transition">
             Connect Spotify
           </button>
         </div>
@@ -348,142 +287,79 @@ const SpotifyNowPlaying = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white p-4 flex items-center justify-center">
       <div className="w-full max-w-md">
-        {/* Search Bar */}
-        <div className="mb-4 relative">
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowSearch(true);
-                }}
-                onFocus={() => setShowSearch(true)}
-                placeholder="Search for a song..."
-                className="w-full bg-gray-800 text-white px-4 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 pr-10"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => {
-                    setSearchQuery('');
-                    setSearchResults({ tracks: [], playlists: [] });
-                    setShowSearch(false);
-                  }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+        {/* Search + Browse */}
+        <div className="mb-4">
+          <div className="flex gap-2 mb-2">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search for a song..."
+              className="flex-1 bg-gray-800 text-white px-4 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
             <button
-              onClick={() => setShowPlaylistPicker(!showPlaylistPicker)}
-              className={`py-2 px-4 rounded-lg transition flex items-center gap-2 ${
-                showPlaylistPicker ? 'bg-green-600' : 'bg-gray-800 hover:bg-gray-700'
-              }`}
-              title="Play Playlist"
+              onClick={() => setShowPlaylistMenu(!showPlaylistMenu)}
+              className="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg text-sm transition"
             >
-              <List className="w-4 h-4" />
+              📋 Playlists
             </button>
           </div>
 
-          {/* Playlist Picker - Similar to Add to Playlist */}
-          {showPlaylistPicker && (
-            <div className="bg-gray-800 rounded-lg p-3 max-h-64 overflow-y-auto mb-4">
-              <div className="flex justify-between items-center mb-2">
-                <p className="text-xs text-gray-400 font-semibold">PLAY PLAYLIST:</p>
-                <button
-                  onClick={() => setShowPlaylistPicker(false)}
-                  className="text-gray-400 hover:text-white"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              {userPlaylists.map(playlist => (
-                <button
-                  key={playlist.id}
-                  onClick={() => playPlaylist(playlist.uri)}
-                  className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-sm transition"
-                >
-                  <img 
-                    src={playlist.images?.[0]?.url || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"%3E%3Crect width="40" height="40" fill="%23333"/%3E%3Ctext x="20" y="20" text-anchor="middle" dominant-baseline="middle" fill="%23666" font-size="20"%3E♪%3C/text%3E%3C/svg%3E'} 
-                    alt="" 
-                    className="w-8 h-8 rounded"
-                  />
-                  <div className="flex-1 text-left min-w-0">
-                    <p className="truncate">{playlist.name}</p>
-                    <p className="text-xs text-gray-400">{playlist.tracks.total} tracks</p>
-                  </div>
-                  <Play className="w-4 h-4 text-gray-400" />
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Search Results Dropdown */}
-          {showSearch && searchQuery && searchResults.tracks.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-gray-800 rounded-lg shadow-2xl z-50 max-h-80 overflow-y-auto">
-              {searchResults.tracks.map((track) => (
+          {/* Search Results */}
+          {searchResults.length > 0 && (
+            <div className="bg-gray-800 rounded-lg p-2 mb-2 max-h-60 overflow-y-auto">
+              {searchResults.map((track) => (
                 <button
                   key={track.id}
                   onClick={() => playTrack(track.uri)}
-                  className="w-full flex items-center gap-3 p-3 hover:bg-gray-700 transition border-b border-gray-700 last:border-0"
+                  className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded transition"
                 >
-                  <img src={track.album.images[2]?.url} alt="" className="w-12 h-12 rounded" />
+                  <img src={track.album.images[2]?.url} alt="" className="w-10 h-10 rounded" />
                   <div className="flex-1 text-left min-w-0">
                     <p className="text-sm font-medium truncate">{track.name}</p>
                     <p className="text-xs text-gray-400 truncate">
                       {track.artists.map(a => a.name).join(', ')}
                     </p>
                   </div>
-                  <Play className="w-4 h-4 text-gray-400" />
                 </button>
               ))}
             </div>
           )}
 
-          {/* Playlist Picker Dropdown */}
-          {showPlaylistPicker && (
-            <div className="absolute top-full right-0 mt-2 bg-gray-800 rounded-lg shadow-2xl z-50 w-64 max-h-80 overflow-y-auto">
-              <div className="p-2 border-b border-gray-700 flex justify-between items-center">
-                <p className="text-xs text-gray-400 font-semibold">YOUR PLAYLISTS</p>
-                <button
-                  onClick={() => setShowPlaylistPicker(false)}
-                  className="text-gray-400 hover:text-white"
-                >
+          {/* Playlist Menu */}
+          {showPlaylistMenu && (
+            <div className="bg-gray-800 rounded-lg p-3 mb-2 max-h-60 overflow-y-auto">
+              <div className="flex justify-between items-center mb-2">
+                <p className="text-xs text-gray-400 font-semibold">PLAY PLAYLIST</p>
+                <button onClick={() => setShowPlaylistMenu(false)} className="text-gray-400">
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              {userPlaylists.map((playlist) => (
+              {playlists.map((playlist) => (
                 <button
                   key={playlist.id}
                   onClick={() => playPlaylist(playlist.uri)}
-                  className="w-full flex items-center gap-2 p-3 hover:bg-gray-700 transition border-b border-gray-700 last:border-0"
+                  className="w-full flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-sm transition"
                 >
-                  <img 
-                    src={playlist.images[0]?.url || 'https://via.placeholder.com/40'} 
-                    alt="" 
-                    className="w-10 h-10 rounded"
-                  />
+                  <div className="w-8 h-8 bg-gray-700 rounded flex items-center justify-center text-xs">
+                    {playlist.images?.[0]?.url ? (
+                      <img src={playlist.images[0].url} alt="" className="w-8 h-8 rounded" />
+                    ) : '♪'}
+                  </div>
                   <div className="flex-1 text-left min-w-0">
-                    <p className="text-sm font-medium truncate">{playlist.name}</p>
+                    <p className="truncate">{playlist.name}</p>
                     <p className="text-xs text-gray-400">{playlist.tracks.total} tracks</p>
                   </div>
-                  <Play className="w-4 h-4 text-gray-400" />
                 </button>
               ))}
             </div>
           )}
         </div>
+
         {/* Now Playing Card */}
         <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 shadow-2xl">
-          {/* Album Art */}
           <div className="relative mb-4">
-            <img
-              src={currentTrack.album.images[0]?.url}
-              alt={currentTrack.name}
-              className="w-full aspect-square rounded-lg shadow-lg"
-            />
+            <img src={currentTrack.album.images[0]?.url} alt="" className="w-full aspect-square rounded-lg" />
             {device && (
               <div className="absolute top-2 right-2 bg-black bg-opacity-70 px-3 py-1 rounded-full text-xs flex items-center gap-1">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
@@ -492,25 +368,17 @@ const SpotifyNowPlaying = () => {
             )}
           </div>
 
-          {/* Track Info */}
           <div className="mb-4">
             <h2 className="text-xl font-bold mb-1 truncate">{currentTrack.name}</h2>
             <p className="text-gray-400 text-sm truncate">
               {currentTrack.artists.map(a => a.name).join(', ')}
             </p>
-            <p className="text-gray-500 text-xs mt-1 truncate">{currentTrack.album.name}</p>
           </div>
 
-          {/* Progress Bar */}
-          <div className="mb-6">
-            <div 
-              onClick={handleSeek}
-              className="bg-gray-700 h-1 rounded-full overflow-hidden cursor-pointer hover:h-1.5 transition-all"
-            >
-              <div 
-                className="bg-green-500 h-full transition-all"
-                style={{ width: `${(progress / duration) * 100}%` }}
-              />
+          {/* Progress */}
+          <div className="mb-4">
+            <div onClick={handleSeek} className="bg-gray-700 h-1 rounded-full cursor-pointer hover:h-1.5 transition-all">
+              <div className="bg-green-500 h-full" style={{ width: `${(progress / duration) * 100}%` }} />
             </div>
             <div className="flex justify-between text-xs text-gray-400 mt-1">
               <span>{formatTime(progress)}</span>
@@ -518,92 +386,53 @@ const SpotifyNowPlaying = () => {
             </div>
           </div>
 
-          {/* Skip Position Controls */}
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <button
-              onClick={skipBackward}
-              className="text-gray-400 hover:text-white transition text-xs px-3 py-1 rounded-full bg-gray-800 hover:bg-gray-700"
-            >
-              -15s
-            </button>
-            <button
-              onClick={skipForward}
-              className="text-gray-400 hover:text-white transition text-xs px-3 py-1 rounded-full bg-gray-800 hover:bg-gray-700"
-            >
-              +15s
-            </button>
+          {/* Skip buttons */}
+          <div className="flex justify-center gap-2 mb-4">
+            <button onClick={skipBackward} className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1 rounded-full">-15s</button>
+            <button onClick={skipForward} className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1 rounded-full">+15s</button>
           </div>
 
           {/* Main Controls */}
           <div className="flex items-center justify-center gap-4 mb-6">
-            <button
-              onClick={skipPrevious}
-              className="text-gray-400 hover:text-white transition p-2"
-            >
+            <button onClick={skipPrevious} className="text-gray-400 hover:text-white p-2">
               <SkipBack className="w-7 h-7" />
             </button>
-            
-            <button
-              onClick={togglePlayPause}
-              className="bg-white text-black rounded-full p-4 hover:scale-105 transition shadow-lg"
-            >
+            <button onClick={togglePlay} className="bg-white text-black rounded-full p-4 hover:scale-105 transition">
               {isPlaying ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7 ml-0.5" />}
             </button>
-            
-            <button
-              onClick={skipNext}
-              className="text-gray-400 hover:text-white transition p-2"
-            >
+            <button onClick={skipNext} className="text-gray-400 hover:text-white p-2">
               <SkipForward className="w-7 h-7" />
             </button>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <button
-              onClick={toggleLike}
-              className={`p-2 rounded-full transition ${
-                isLiked ? 'text-green-500' : 'text-gray-400 hover:text-white'
-              }`}
-              title={isLiked ? 'Remove from Liked Songs' : 'Add to Liked Songs'}
-            >
+          {/* Actions */}
+          <div className="flex justify-center gap-3 mb-4">
+            <button onClick={toggleLike} className={`p-2 rounded-full ${isLiked ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}>
               <Heart className={`w-6 h-6 ${isLiked ? 'fill-current' : ''}`} />
             </button>
-            
-            <button
-              onClick={() => setShowPlaylists(prev => !prev)}
-              className="p-2 rounded-full text-gray-400 hover:text-white transition"
-              title="Add to Playlist"
-            >
+            <button onClick={() => setShowAddToPlaylist(!showAddToPlaylist)} className="p-2 rounded-full text-gray-400 hover:text-white">
               <Plus className="w-6 h-6" />
             </button>
           </div>
 
-          {/* Add to Playlist Selection */}
-          {showPlaylists && (
-            <div className="bg-gray-800 rounded-lg p-3 max-h-48 overflow-y-auto mb-4">
-              <div className="flex justify-between items-center mb-2">
+          {/* Add to Playlist */}
+          {showAddToPlaylist && (
+            <div className="bg-gray-800 rounded-lg p-3 mb-4 max-h-48 overflow-y-auto">
+              <div className="flex justify-between mb-2">
                 <p className="text-xs text-gray-400">Add to playlist:</p>
-                <button
-                  onClick={() => setShowPlaylists(false)}
-                  className="text-gray-400 hover:text-white"
-                >
+                <button onClick={() => setShowAddToPlaylist(false)}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              {playlists.map(playlist => (
-                <button
-                  key={playlist.id}
-                  onClick={() => addToPlaylist(playlist.id)}
-                  className="w-full text-left px-3 py-2 hover:bg-gray-700 rounded text-sm transition"
-                >
-                  {playlist.name}
+              {playlists.map((p) => (
+                <button key={p.id} onClick={() => addToPlaylist(p.id)} className="w-full text-left px-3 py-2 hover:bg-gray-700 rounded text-sm">
+                  {p.name}
                 </button>
               ))}
             </div>
           )}
 
-          {/* Volume Control */}
+          {/* Volume */}
           <div className="flex items-center gap-3">
             <Volume2 className="w-4 h-4 text-gray-400" />
             <input
@@ -611,11 +440,9 @@ const SpotifyNowPlaying = () => {
               min="0"
               max="100"
               value={volume}
-              onChange={handleVolumeChange}
+              onChange={handleVolume}
               className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-              style={{
-                background: `linear-gradient(to right, #22c55e 0%, #22c55e ${volume}%, #374151 ${volume}%, #374151 100%)`
-              }}
+              style={{ background: `linear-gradient(to right, #22c55e 0%, #22c55e ${volume}%, #374151 ${volume}%, #374151 100%)` }}
             />
             <span className="text-xs text-gray-400 w-8 text-right">{volume}%</span>
           </div>
