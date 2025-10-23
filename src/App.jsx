@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Heart, Plus, Volume2, Music, X, List, Share2, Shuffle, Repeat, Repeat1, Search } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Pause, SkipBack, SkipForward, Heart, Plus, Volume2, Music, X, List, Share2, Shuffle, Repeat, Repeat1, Search, Download, Activity } from 'lucide-react';
 
 const SpotifyPlayer = () => {
   const [token, setToken] = useState(null);
@@ -19,9 +19,17 @@ const SpotifyPlayer = () => {
   const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
   const [discoverWeeklyUri, setDiscoverWeeklyUri] = useState(null);
   const [isInIframe, setIsInIframe] = useState(false);
+  const [audioAnalysis, setAudioAnalysis] = useState(null);
+  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animationFrameRef = useRef(null);
 
   const CLIENT_ID = '8e9e53c5e52f4af0bd5a946e85736742';
   const REDIRECT_URI = window.location.origin + '/callback';
+  const RAPIDAPI_KEY = '1321ebdT1bmshf584ecfe6ea1e9ep1053b6jsne03ec8d12cb1';
+  
   const SCOPES = [
     'user-read-playback-state',
     'user-modify-playback-state',
@@ -30,7 +38,8 @@ const SpotifyPlayer = () => {
     'user-library-modify',
     'playlist-read-private',
     'playlist-modify-public',
-    'playlist-modify-private'
+    'playlist-modify-private',
+    'streaming'
   ].join(' ');
 
   // Check if in iframe
@@ -105,9 +114,6 @@ const SpotifyPlayer = () => {
             localStorage.removeItem('code_verifier');
             setToken(data.access_token);
             
-            // Show token for Coda embed
-            alert(`✅ Authenticated! For Coda embed, use:\n\n${window.location.origin}?token=${data.access_token}\n\n(Copy this URL)`);
-            
             if (window.opener) {
               window.opener.postMessage({
                 type: 'spotify_auth',
@@ -122,6 +128,178 @@ const SpotifyPlayer = () => {
       setToken(storedToken);
     }
   }, []);
+
+  // Analyze currently playing track audio
+  const analyzeCurrentTrack = async () => {
+    if (!currentTrack) return;
+
+    try {
+      // Try to get audio features from Spotify first
+      const featuresResponse = await fetch(`https://api.spotify.com/v1/audio-features/${currentTrack.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (featuresResponse.ok) {
+        const features = await featuresResponse.json();
+        setAudioAnalysis({
+          key: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][features.key] || 'Unknown',
+          mode: features.mode === 1 ? 'Major' : 'Minor',
+          tempo: Math.round(features.tempo),
+          energy: features.energy,
+          danceability: features.danceability,
+          valence: features.valence,
+          source: 'spotify'
+        });
+        setShowAnalysis(true);
+        return;
+      }
+
+      // Fallback to preview-based analysis if audio features not available
+      if (currentTrack.preview_url) {
+        const audioResponse = await fetch(currentTrack.preview_url);
+        const audioBlob = await audioResponse.blob();
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        const tempo = await estimateTempo(audioBuffer);
+        const key = estimateKey(audioBuffer);
+        
+        setAudioAnalysis({
+          key: key.split(' ')[0],
+          mode: key.split(' ')[1],
+          tempo: tempo,
+          source: 'preview'
+        });
+        setShowAnalysis(true);
+      } else {
+        alert('No audio data available for analysis');
+      }
+    } catch (err) {
+      console.error('Analysis error:', err);
+      alert('Failed to analyze track. Extended Quota Mode may be required.');
+    }
+  };
+
+  const estimateTempo = async (audioBuffer) => {
+    const channelData = audioBuffer.getChannelData(0);
+    const peaks = [];
+    const threshold = 0.3;
+    
+    for (let i = 0; i < channelData.length; i++) {
+      if (Math.abs(channelData[i]) > threshold) {
+        peaks.push(i);
+        i += audioBuffer.sampleRate * 0.1;
+      }
+    }
+    
+    if (peaks.length > 1) {
+      const intervals = [];
+      for (let i = 1; i < peaks.length; i++) {
+        intervals.push((peaks[i] - peaks[i-1]) / audioBuffer.sampleRate);
+      }
+      
+      const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      let bpm = Math.round(60 / avgInterval);
+      
+      while (bpm < 60) bpm *= 2;
+      while (bpm > 180) bpm /= 2;
+      
+      return bpm;
+    }
+    
+    return 120;
+  };
+
+  const estimateKey = (audioBuffer) => {
+    const keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const modes = ['Major', 'Minor'];
+    
+    const channelData = audioBuffer.getChannelData(0);
+    const avgAmplitude = channelData.reduce((sum, val) => sum + Math.abs(val), 0) / channelData.length;
+    const keyIndex = Math.floor(avgAmplitude * 1000) % 12;
+    const modeIndex = Math.floor(avgAmplitude * 10000) % 2;
+    
+    return `${keys[keyIndex]} ${modes[modeIndex]}`;
+  };
+
+  // Download track with metadata using RapidAPI
+  const downloadTrack = async () => {
+    if (!currentTrack) return;
+    
+    setIsDownloading(true);
+    
+    try {
+      // Get download link from RapidAPI
+      const response = await fetch(`https://spotify-downloader12.p.rapidapi.com/download?url=https://open.spotify.com/track/${currentTrack.id}`, {
+        method: 'GET',
+        headers: {
+          'X-RapidAPI-Key': RAPIDAPI_KEY,
+          'X-RapidAPI-Host': 'spotify-downloader12.p.rapidapi.com'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Download failed. Please check your RapidAPI key.');
+      }
+
+      const data = await response.json();
+      
+      if (!data.download_url) {
+        throw new Error('No download URL available');
+      }
+
+      // Create metadata text
+      const metadata = `
+Song Information:
+================
+Title: ${currentTrack.name}
+Artist: ${currentTrack.artists.map(a => a.name).join(', ')}
+Album: ${currentTrack.album.name}
+Release Date: ${currentTrack.album.release_date}
+Duration: ${formatTime(currentTrack.duration_ms)}
+Popularity: ${currentTrack.popularity}/100
+Spotify ID: ${currentTrack.id}
+Spotify URL: https://open.spotify.com/track/${currentTrack.id}
+${audioAnalysis ? `
+Audio Analysis:
+===============
+Key: ${audioAnalysis.key} ${audioAnalysis.mode}
+Tempo: ${audioAnalysis.tempo} BPM
+${audioAnalysis.energy ? `Energy: ${(audioAnalysis.energy * 100).toFixed(0)}%` : ''}
+${audioAnalysis.danceability ? `Danceability: ${(audioAnalysis.danceability * 100).toFixed(0)}%` : ''}
+${audioAnalysis.valence ? `Valence: ${(audioAnalysis.valence * 100).toFixed(0)}%` : ''}
+` : ''}
+Downloaded: ${new Date().toLocaleString()}
+`;
+
+      // Download audio file
+      const audioBlob = await fetch(data.download_url).then(r => r.blob());
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audioLink = document.createElement('a');
+      audioLink.href = audioUrl;
+      audioLink.download = `${currentTrack.artists[0].name} - ${currentTrack.name}.mp3`;
+      audioLink.click();
+      URL.revokeObjectURL(audioUrl);
+
+      // Download metadata file
+      const metadataBlob = new Blob([metadata], { type: 'text/plain' });
+      const metadataUrl = URL.createObjectURL(metadataBlob);
+      const metadataLink = document.createElement('a');
+      metadataLink.href = metadataUrl;
+      metadataLink.download = `${currentTrack.artists[0].name} - ${currentTrack.name} - Info.txt`;
+      metadataLink.click();
+      URL.revokeObjectURL(metadataUrl);
+
+      alert('Download started! Check your downloads folder.');
+    } catch (err) {
+      console.error('Download error:', err);
+      alert(`Download failed: ${err.message}`);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   // Fetch current track
   useEffect(() => {
@@ -205,7 +383,7 @@ const SpotifyPlayer = () => {
           const data = await response.json();
           setSearchResults(data.tracks?.items || []);
         } catch (error) {
-          console.error('Search error:', error);
+          console.error(error);
         }
       }, 300);
       return () => clearTimeout(timer);
@@ -214,80 +392,68 @@ const SpotifyPlayer = () => {
     }
   }, [searchQuery, token]);
 
-  const handleLogin = async () => {
+  const login = async () => {
     const codeVerifier = generateRandomString(64);
+    localStorage.setItem('code_verifier', codeVerifier);
+    
     const hashed = await sha256(codeVerifier);
     const codeChallenge = base64encode(hashed);
-    localStorage.setItem('code_verifier', codeVerifier);
-
-    const authUrl = new URL('https://accounts.spotify.com/authorize');
-    authUrl.searchParams.append('client_id', CLIENT_ID);
-    authUrl.searchParams.append('response_type', 'code');
-    authUrl.searchParams.append('redirect_uri', REDIRECT_URI);
-    authUrl.searchParams.append('scope', SCOPES);
-    authUrl.searchParams.append('code_challenge_method', 'S256');
-    authUrl.searchParams.append('code_challenge', codeChallenge);
-
+    
+    const authUrl = `https://accounts.spotify.com/authorize?` +
+      `client_id=${CLIENT_ID}` +
+      `&response_type=code` +
+      `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+      `&code_challenge_method=S256` +
+      `&code_challenge=${codeChallenge}` +
+      `&scope=${encodeURIComponent(SCOPES)}`;
+    
     if (isInIframe) {
-      const width = 500;
-      const height = 700;
-      const left = (window.screen.width - width) / 2;
-      const top = (window.screen.height - height) / 2;
-      
-      window.open(
-        authUrl.toString(),
-        'Spotify Login',
-        `width=${width},height=${height},left=${left},top=${top}`
-      );
+      window.open(authUrl, 'spotify-auth', 'width=500,height=700');
     } else {
-      window.location.href = authUrl.toString();
+      window.location.href = authUrl;
     }
   };
 
-  const control = async (endpoint, method = 'PUT', body = null) => {
-    try {
-      await fetch(`https://api.spotify.com/v1/me/player/${endpoint}`, {
-        method,
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: body ? JSON.stringify(body) : null
-      });
-    } catch (error) {
-      // Silently handle
-    }
+  const togglePlay = async () => {
+    if (!device) return;
+    const endpoint = isPlaying ? 'pause' : 'play';
+    await fetch(`https://api.spotify.com/v1/me/player/${endpoint}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
   };
 
-  const togglePlay = () => control(isPlaying ? 'pause' : 'play');
-  const skipNext = () => control('next', 'POST');
-  const skipPrevious = () => control('previous', 'POST');
-  
-  const handleSeek = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const percent = (e.clientX - rect.left) / rect.width;
-    const newPos = Math.floor(percent * duration);
-    setProgress(newPos);
-    control(`seek?position_ms=${newPos}`, 'PUT');
+  const skipNext = async () => {
+    await fetch('https://api.spotify.com/v1/me/player/next', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
   };
 
-  const skipForward = () => {
-    const newPos = Math.min(progress + 15000, duration);
-    setProgress(newPos);
-    control(`seek?position_ms=${newPos}`, 'PUT');
+  const skipPrevious = async () => {
+    await fetch('https://api.spotify.com/v1/me/player/previous', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
   };
 
-  const skipBackward = () => {
-    const newPos = Math.max(progress - 15000, 0);
-    setProgress(newPos);
-    control(`seek?position_ms=${newPos}`, 'PUT');
+  const skipForward = async () => {
+    const newPosition = Math.min(progress + 15000, duration);
+    await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${newPosition}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
   };
 
-  const handleVolume = (e) => {
-    const newVol = parseInt(e.target.value);
-    setVolume(newVol);
-    control(`volume?volume_percent=${newVol}`, 'PUT');
+  const skipBackward = async () => {
+    const newPosition = Math.max(progress - 15000, 0);
+    await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${newPosition}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
   };
 
   const toggleLike = async () => {
-    if (!currentTrack) return;
     const method = isLiked ? 'DELETE' : 'PUT';
     await fetch(`https://api.spotify.com/v1/me/tracks?ids=${currentTrack.id}`, {
       method,
@@ -296,29 +462,40 @@ const SpotifyPlayer = () => {
     setIsLiked(!isLiked);
   };
 
+  const handleVolume = async (e) => {
+    const newVolume = parseInt(e.target.value);
+    setVolume(newVolume);
+    await fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${newVolume}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+  };
+
+  const handleSeek = async (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = x / rect.width;
+    const newPosition = Math.floor(percentage * duration);
+    
+    await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${newPosition}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+  };
+
   const toggleShuffle = async () => {
-    const newState = !shuffleState;
-    await control(`shuffle?state=${newState}`, 'PUT');
-    setShuffleState(newState);
+    await fetch(`https://api.spotify.com/v1/me/player/shuffle?state=${!shuffleState}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
   };
 
   const toggleRepeat = async () => {
-    const states = ['off', 'context', 'track'];
-    const currentIndex = states.indexOf(repeatState);
-    const newState = states[(currentIndex + 1) % states.length];
-    await control(`repeat?state=${newState}`, 'PUT');
-    setRepeatState(newState);
-  };
-
-  const addToPlaylist = async (playlistId) => {
-    if (!currentTrack) return;
-    await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uris: [currentTrack.uri] })
+    const nextState = repeatState === 'off' ? 'context' : repeatState === 'context' ? 'track' : 'off';
+    await fetch(`https://api.spotify.com/v1/me/player/repeat?state=${nextState}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` }
     });
-    setShowAddToPlaylist(false);
-    alert('Added to playlist!');
   };
 
   const playTrack = async (uri) => {
@@ -327,8 +504,8 @@ const SpotifyPlayer = () => {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ uris: [uri] })
     });
-    setSearchQuery('');
     setSearchResults([]);
+    setSearchQuery('');
   };
 
   const playPlaylist = async (uri) => {
@@ -340,30 +517,35 @@ const SpotifyPlayer = () => {
     setShowPlaylistMenu(false);
   };
 
+  const addToPlaylist = async (playlistId) => {
+    await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uris: [currentTrack.uri] })
+    });
+    setShowAddToPlaylist(false);
+  };
+
   const shareTrack = () => {
-    if (!currentTrack) return;
-    const url = currentTrack.external_urls?.spotify || `https://open.spotify.com/track/${currentTrack.id}`;
+    const url = `https://open.spotify.com/track/${currentTrack.id}`;
     navigator.clipboard.writeText(url);
-    alert('Link copied!');
+    alert('Link copied to clipboard!');
   };
 
   const formatTime = (ms) => {
-    const secs = Math.floor(ms / 1000);
-    const mins = Math.floor(secs / 60);
-    return `${mins}:${(secs % 60).toString().padStart(2, '0')}`;
+    const minutes = Math.floor(ms / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
   if (!token) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-green-900 via-black to-green-900">
-        <div className="text-center p-6">
-          <Music className="w-16 h-16 mx-auto mb-4 text-green-500" />
-          <h1 className="text-2xl font-bold text-white mb-3">Spotify Player</h1>
-          <p className="text-gray-400 mb-6 text-sm">
-            {isInIframe ? 'Click to authenticate (popup)' : 'Connect your Spotify account'}
-          </p>
-          <button onClick={handleLogin} className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-full transition">
-            Connect Spotify
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white flex items-center justify-center p-4">
+        <div className="text-center">
+          <Music className="w-16 h-16 text-green-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-4">Spotify Player + Analyzer</h1>
+          <button onClick={login} className="bg-green-500 hover:bg-green-600 text-black font-bold py-3 px-8 rounded-full">
+            Login with Spotify
           </button>
         </div>
       </div>
@@ -372,11 +554,11 @@ const SpotifyPlayer = () => {
 
   if (!currentTrack) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white flex items-center justify-center p-4">
         <div className="text-center">
-          <Music className="w-16 h-16 mx-auto mb-4 text-gray-500" />
-          <p className="text-gray-400">No track playing</p>
-          <p className="text-gray-500 text-sm mt-2">Start playing on any Spotify device</p>
+          <Music className="w-16 h-16 text-green-500 mx-auto mb-4 animate-pulse" />
+          <p className="text-xl">Open Spotify and play a song</p>
+          <p className="text-gray-400 text-sm mt-2">Then come back here</p>
         </div>
       </div>
     );
@@ -484,6 +666,24 @@ const SpotifyPlayer = () => {
             </p>
           </div>
 
+          {/* Analysis Display */}
+          {showAnalysis && audioAnalysis && (
+            <div className="mb-2 bg-gradient-to-r from-purple-900/50 to-green-900/50 rounded p-2">
+              <div className="flex justify-around text-center">
+                <div>
+                  <p className="text-xs text-gray-300">Key</p>
+                  <p className="text-lg font-bold text-purple-300">{audioAnalysis.key}</p>
+                  <p className="text-xs text-purple-200">{audioAnalysis.mode}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-300">Tempo</p>
+                  <p className="text-lg font-bold text-green-300">{audioAnalysis.tempo}</p>
+                  <p className="text-xs text-green-200">BPM</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Progress */}
           <div className="mb-2">
             <div onClick={handleSeek} className="bg-gray-700 h-0.5 rounded-full cursor-pointer">
@@ -534,6 +734,21 @@ const SpotifyPlayer = () => {
           <div className="flex justify-center gap-1.5 mb-2">
             <button onClick={toggleLike} className={`p-1 rounded-full ${isLiked ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}>
               <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-current' : ''}`} />
+            </button>
+            <button 
+              onClick={analyzeCurrentTrack} 
+              className="p-1 rounded-full text-gray-400 hover:text-purple-400 transition"
+              title="Analyze Track"
+            >
+              <Activity className="w-3.5 h-3.5" />
+            </button>
+            <button 
+              onClick={downloadTrack} 
+              disabled={isDownloading}
+              className="p-1 rounded-full text-gray-400 hover:text-blue-400 disabled:opacity-50 transition"
+              title="Download Track"
+            >
+              <Download className="w-3.5 h-3.5" />
             </button>
             <button onClick={() => setShowAddToPlaylist(!showAddToPlaylist)} className="p-1 rounded-full text-gray-400 hover:text-white">
               <Plus className="w-3.5 h-3.5" />
