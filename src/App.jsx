@@ -134,7 +134,35 @@ const SpotifyPlayer = () => {
     if (!currentTrack) return;
 
     try {
-      // Try to get audio features from Spotify first
+      // Use RapidAPI Spotify Audio Features for reliable key/tempo
+      const rapidResponse = await fetch(
+        `https://spotify-audio-features-track-analysis.p.rapidapi.com/api/v1/audio-features?track_id=${currentTrack.id}`,
+        {
+          headers: {
+            'X-RapidAPI-Key': RAPIDAPI_KEY,
+            'X-RapidAPI-Host': 'spotify-audio-features-track-analysis.p.rapidapi.com'
+          }
+        }
+      );
+
+      if (rapidResponse.ok) {
+        const rapidData = await rapidResponse.json();
+        if (rapidData && rapidData.key !== undefined) {
+          setAudioAnalysis({
+            key: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][rapidData.key] || 'Unknown',
+            mode: rapidData.mode === 1 ? 'Major' : 'Minor',
+            tempo: Math.round(rapidData.tempo),
+            energy: rapidData.energy,
+            danceability: rapidData.danceability,
+            valence: rapidData.valence,
+            source: 'rapidapi'
+          });
+          setShowAnalysis(true);
+          return;
+        }
+      }
+
+      // Fallback: Try Spotify API (requires Extended Quota Mode)
       const featuresResponse = await fetch(`https://api.spotify.com/v1/audio-features/${currentTrack.id}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -154,7 +182,7 @@ const SpotifyPlayer = () => {
         return;
       }
 
-      // Fallback to preview-based analysis if audio features not available
+      // Last resort: preview-based analysis
       if (currentTrack.preview_url) {
         const audioResponse = await fetch(currentTrack.preview_url);
         const audioBlob = await audioResponse.blob();
@@ -178,7 +206,7 @@ const SpotifyPlayer = () => {
       }
     } catch (err) {
       console.error('Analysis error:', err);
-      alert('Failed to analyze track. Extended Quota Mode may be required.');
+      alert('Failed to analyze track. Please try again.');
     }
   };
 
